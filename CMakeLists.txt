@@ -18,6 +18,9 @@ add_commonlibsse_plugin(${PROJECT_NAME}
     src/Detours/disolx64.cpp
     src/Detours/image.cpp
     src/Detours/modules.cpp
+    src/BowConfig.cpp
+    src/BowStrings.cpp
+    src/UI_IntegratedBow.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
@@ -34,6 +37,10 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE
   src/BowState.h
   src/Hooks.h
   src/BowInput.h
+  src/BowConfig.h
+  src/BoWConfigPath.h
+  src/BowStrings.h
+  src/UI_IntegratedBow.h
 )
 
 set_source_files_properties(

@@ -7,6 +7,7 @@
 namespace {
     bool g_holdMode = true;
     std::uint32_t g_bowKeyScanCode = 0x2F;
+    int g_bowGamepadButton = -1;
 
     class IntegratedBowInputHandler : public RE::BSTEventSink<RE::InputEvent*> {
     public:
@@ -49,12 +50,20 @@ namespace {
 
     private:
         bool IsOurKey(const RE::ButtonEvent* a_event) const {
-            if (a_event->GetDevice() != RE::INPUT_DEVICE::kKeyboard) {
-                return false;
+            auto dev = a_event->GetDevice();
+
+            if (dev == RE::INPUT_DEVICE::kKeyboard) {
+                auto code = a_event->idCode;
+                return code == g_bowKeyScanCode;
             }
 
-            auto code = a_event->idCode;
-            return code == g_bowKeyScanCode;
+            if (dev == RE::INPUT_DEVICE::kGamepad) {
+                if (g_bowGamepadButton < 0) return false;
+                auto code = static_cast<int>(a_event->idCode);
+                return code == g_bowGamepadButton;
+            }
+
+            return false;
         }
 
         void OnKeyPressed(RE::PlayerCharacter* player) {
@@ -169,4 +178,5 @@ namespace BowInput {
     void SetHoldMode(bool hold) { g_holdMode = hold; }
 
     void SetKeyScanCode(std::uint32_t scanCode) { g_bowKeyScanCode = scanCode; }
+    void SetGamepadButton(int button) { g_bowGamepadButton = button; }
 }

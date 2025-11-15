@@ -5,4 +5,5 @@ namespace BowInput {
 
     void SetHoldMode(bool hold);
     void SetKeyScanCode(std::uint32_t scanCode);
+    void SetGamepadButton(int button);
 }

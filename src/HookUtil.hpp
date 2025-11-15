@@ -5,8 +5,6 @@
 
 namespace Hook::stl {
 
-    // ----- Write_Call
-
     template <class T, std::size_t Size = 5>
     void write_call(std::uintptr_t a_src) {
         SKSE::AllocTrampoline(14);
@@ -41,8 +39,6 @@ namespace Hook::stl {
             T::func = trampoline.write_call<Size>(address, T::thunk);
         }
     }
-
-    //----- Write_Jmp (Write_Branch)
 
     template <class T>
     void write_jmp(std::uintptr_t a_src) {
@@ -79,7 +75,6 @@ namespace Hook::stl {
     void write_detour(REL::RelocationID a_relId) {
         REL::Relocation<std::uintptr_t> target{a_relId};
 
-        // Validate target address
         if (!target.address()) {
             SKSE::stl::report_and_fail(
                 fmt::format("Invalid target address for detour [{} + 0x{:X}]", a_relId.id(), a_relId.offset()));
@@ -108,7 +103,6 @@ namespace Hook::stl {
     void write_detour_replace(REL::RelocationID a_relId) {
         REL::Relocation<std::uintptr_t> target{a_relId};
 
-        // Validate target address
         if (!target.address()) {
             SKSE::stl::report_and_fail(
                 fmt::format("Invalid target address for detour replace [{} + 0x{:X}]", a_relId.id(), a_relId.offset()));

@@ -4,9 +4,9 @@
 namespace BowState {
 
     struct IntegratedBowState {
-        RE::TESObjectWEAP* chosenBow{nullptr};   // arco escolhido
-        RE::TESBoundObject* prevRight{nullptr};  // o que estava na mão direita
-        RE::TESBoundObject* prevLeft{nullptr};   // o que estava na mão esquerda
+        RE::TESObjectWEAP* chosenBow{nullptr};
+        RE::TESBoundObject* prevRight{nullptr};
+        RE::TESBoundObject* prevLeft{nullptr};
         bool isUsingBow{false};
         bool isEquipingBow{false};
         bool wasCombatPosed{false};

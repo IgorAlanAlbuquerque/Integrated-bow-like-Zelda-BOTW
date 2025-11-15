@@ -2,8 +2,12 @@
 
 #include <filesystem>
 
+#include "BowConfig.h"
+#include "BowInput.h"
+#include "BowStrings.h"
 #include "Hooks.h"
 #include "PCH.h"
+#include "UI_IntegratedBow.h"
 
 #ifndef DLLEXPORT
     #include "REL/Relocation.h"
@@ -11,8 +15,6 @@
 #ifndef DLLEXPORT
     #define DLLEXPORT __declspec(dllexport)
 #endif
-
-const std::filesystem::path& ERF_GetThisDllDir();
 
 namespace {
     void InitializeLogger() {
@@ -32,32 +34,26 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
     SKSE::Init(skse);
     InitializeLogger();
 
+    auto& cfg = IntegratedBow::GetBowConfig();
+    cfg.Load();
+    IntegratedBow::Strings::Load();
+
+    const bool hold = (cfg.mode.load(std::memory_order_relaxed) == IntegratedBow::BowMode::Hold);
+    BowInput::SetHoldMode(hold);
+    BowInput::SetKeyScanCode(cfg.keyboardScanCode.load(std::memory_order_relaxed));
+    BowInput::SetGamepadButton(cfg.gamepadButton.load(std::memory_order_relaxed));
+
+    SKSE::AllocTrampoline(1 << 14);
+    Hooks::Install_Hooks();
+    BowInput::RegisterInputHandler();
+
     auto* messaging = SKSE::GetMessagingInterface();
     messaging->RegisterListener([](SKSE::MessagingInterface::Message* message) {
+        if (!message) return;
         if (message->type == SKSE::MessagingInterface::kDataLoaded) {
-            Hooks::Install_Hooks();
+            IntegratedBow_UI::Register();
         }
     });
 
     return true;
-}
-
-const std::filesystem::path& ERF_GetThisDllDir() {
-    static std::filesystem::path cached;
-
-    if (static bool init = false; !init) {
-        init = true;
-
-        HMODULE self = nullptr;
-        if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                               reinterpret_cast<LPCWSTR>(&SKSEPlugin_Load), &self)) {
-            wchar_t buf[MAX_PATH]{};
-            const DWORD n = GetModuleFileNameW(self, buf, static_cast<DWORD>(std::size(buf)));
-            if (n > 0) {
-                cached = std::filesystem::path(buf).parent_path();
-            }
-        }
-    }
-
-    return cached;
 }
