@@ -8,6 +8,8 @@ namespace BowState {
         RE::TESBoundObject* prevRight{nullptr};  // o que estava na mão direita
         RE::TESBoundObject* prevLeft{nullptr};   // o que estava na mão esquerda
         bool isUsingBow{false};
+        bool isEquipingBow{false};
+        bool wasCombatPosed{false};
     };
 
     inline IntegratedBowState& Get() {
@@ -21,6 +23,8 @@ namespace BowState {
         auto& st = Get();
         st.chosenBow = nullptr;
     }
+
+    inline bool isEquipingBow() { return Get().isEquipingBow; }
 
     inline bool HasChosenBow() { return Get().chosenBow != nullptr; }
 

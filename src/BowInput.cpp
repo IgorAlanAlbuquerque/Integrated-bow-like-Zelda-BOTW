@@ -99,24 +99,50 @@ namespace {
             }
         }
 
+        static bool IsWeaponDrawn(RE::Actor* actor) {
+            if (!actor) {
+                return false;
+            }
+
+            auto* state = actor->AsActorState();
+            if (!state) {
+                return false;
+            }
+
+            return state->IsWeaponDrawn();
+        }
+
+        static void SetWeaponDrawn(RE::Actor* actor, bool drawn) {
+            if (!actor) return;
+            actor->DrawWeaponMagicHands(drawn);
+        }
+
         static void EnterBowMode(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
                                  BowState::IntegratedBowState& st, RE::TESObjectWEAP* bow) {
+            if (!player || !equipMgr || !bow) {
+                return;
+            }
             auto* rightForm = player->GetEquippedObject(false);
             auto* leftForm = player->GetEquippedObject(true);
 
             BowState::SetPrevWeapons(rightForm, leftForm);
 
+            const bool alreadyDrawn = IsWeaponDrawn(player);
+            st.wasCombatPosed = alreadyDrawn;
+
+            st.isEquipingBow = true;
             equipMgr->EquipObject(player, bow, nullptr, 1, nullptr, true, true, true, false);
 
+            if (!alreadyDrawn) {
+                SetWeaponDrawn(player, true);
+            }
+
+            st.isEquipingBow = false;
             st.isUsingBow = true;
         }
 
         static void ExitBowMode(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
                                 BowState::IntegratedBowState& st) {
-            if (st.chosenBow) {
-                equipMgr->UnequipObject(player, st.chosenBow, nullptr, 1, nullptr, true, true, false, false, nullptr);
-            }
-
             if (st.prevRight) {
                 equipMgr->EquipObject(player, st.prevRight, nullptr, 1, nullptr, true, true, true, false);
             }
@@ -125,14 +151,17 @@ namespace {
             }
 
             st.isUsingBow = false;
-            st.prevRight = nullptr;
-            st.prevLeft = nullptr;
+
+            if (!st.wasCombatPosed && !player->IsInCombat()) {
+                SetWeaponDrawn(player, false);
+            }
         }
     };
 }
 
 namespace BowInput {
     void RegisterInputHandler() {
+        spdlog::info("[IntegratedBow] Registering IntegratedBowInputHandler");
         if (auto* mgr = RE::BSInputDeviceManager::GetSingleton()) {
             mgr->AddEventSink(IntegratedBowInputHandler::GetSingleton());
         }
