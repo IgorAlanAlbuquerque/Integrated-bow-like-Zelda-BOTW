@@ -143,6 +143,9 @@ namespace {
 
         static void ExitBowMode(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
                                 BowState::IntegratedBowState& st) {
+            if (!st.wasCombatPosed && !player->IsInCombat()) {
+                SetWeaponDrawn(player, false);
+            }
             if (st.prevRight) {
                 equipMgr->EquipObject(player, st.prevRight, nullptr, 1, nullptr, true, true, true, false);
             }
@@ -151,10 +154,6 @@ namespace {
             }
 
             st.isUsingBow = false;
-
-            if (!st.wasCombatPosed && !player->IsInCombat()) {
-                SetWeaponDrawn(player, false);
-            }
         }
     };
 }
