@@ -169,7 +169,6 @@ namespace {
 
 namespace BowInput {
     void RegisterInputHandler() {
-        spdlog::info("[IntegratedBow] Registering IntegratedBowInputHandler");
         if (auto* mgr = RE::BSInputDeviceManager::GetSingleton()) {
             mgr->AddEventSink(IntegratedBowInputHandler::GetSingleton());
         }

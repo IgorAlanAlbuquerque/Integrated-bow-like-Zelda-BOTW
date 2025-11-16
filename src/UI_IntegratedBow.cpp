@@ -13,7 +13,9 @@ using IntegratedBow::GetBowConfig;
 void __stdcall IntegratedBow_UI::DrawConfig() {
     auto& cfg = GetBowConfig();
 
-    ImGui::TextUnformatted(IntegratedBow::Strings::Get("MenuTitle", "Integrated Bow").c_str());
+    // Título
+    const auto& title = IntegratedBow::Strings::Get("MenuTitle", "Integrated Bow");
+    ImGui::TextUnformatted(title.c_str());
     ImGui::Separator();
 
     static bool pending = false;
@@ -23,12 +25,14 @@ void __stdcall IntegratedBow_UI::DrawConfig() {
         BowMode mode = cfg.mode.load(std::memory_order_relaxed);
         int modeIndex = (mode == BowMode::Press) ? 1 : 0;
 
-        const char* items[] = {IntegratedBow::Strings::Get("Item_InputMode_Hold", "Hold").c_str(),
-                               IntegratedBow::Strings::Get("Item_InputMode_Press", "Press").c_str()};
+        const auto& lblMode = IntegratedBow::Strings::Get("Item_InputMode", "Bow mode");
+        const auto& lblHold = IntegratedBow::Strings::Get("Item_InputMode_Hold", "Hold");
+        const auto& lblPress = IntegratedBow::Strings::Get("Item_InputMode_Press", "Press");
+
+        const char* items[] = {lblHold.c_str(), lblPress.c_str()};
 
         ImGui::SetNextItemWidth(220.0f);
-        if (ImGui::Combo(IntegratedBow::Strings::Get("Item_InputMode", "Bow mode").c_str(), &modeIndex, items,
-                         IM_ARRAYSIZE(items))) {
+        if (ImGui::Combo(lblMode.c_str(), &modeIndex, items, IM_ARRAYSIZE(items))) {
             cfg.mode.store(modeIndex == 1 ? BowMode::Press : BowMode::Hold, std::memory_order_relaxed);
             dirty = true;
         }

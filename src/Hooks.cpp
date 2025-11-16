@@ -19,6 +19,7 @@ namespace {
                 if (auto weap = a_object ? a_object->As<RE::TESObjectWEAP>() : nullptr) {
                     if (weap->IsBow() && !BowState::isEquipingBow() && !BowState::IsUsingBow()) {
                         BowState::SetChosenBow(weap);
+
                         return;
                     }
                     if (BowState::IsUsingBow() && weap->IsBow()) {
@@ -37,7 +38,6 @@ namespace {
             }
 
             if (!func) {
-                spdlog::error("[IntegratedBow] EquipObjectHook::func == nullptr!");
                 return;
             }
 

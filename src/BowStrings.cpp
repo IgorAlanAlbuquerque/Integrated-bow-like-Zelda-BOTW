@@ -23,7 +23,6 @@ namespace IntegratedBow::Strings {
             auto path = StringsPath();
             std::ifstream in(path);
             if (!in.is_open()) {
-                spdlog::warn("[IntegratedBow] Could not open {}", path.string());
                 return;
             }
 

@@ -44,13 +44,12 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
     BowInput::SetGamepadButton(cfg.gamepadButton.load(std::memory_order_relaxed));
 
     SKSE::AllocTrampoline(1 << 14);
-    Hooks::Install_Hooks();
-    BowInput::RegisterInputHandler();
 
     auto* messaging = SKSE::GetMessagingInterface();
     messaging->RegisterListener([](SKSE::MessagingInterface::Message* message) {
         if (!message) return;
         if (message->type == SKSE::MessagingInterface::kDataLoaded) {
+            Hooks::Install_Hooks();
             IntegratedBow_UI::Register();
         }
     });
