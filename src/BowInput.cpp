@@ -162,7 +162,13 @@ namespace {
                 equipMgr->EquipObject(player, st.prevLeft, nullptr, 1, nullptr, true, true, true, false);
             }
 
+            if (!st.prevRight && !st.prevLeft && st.chosenBow) {
+                equipMgr->UnequipObject(player, st.chosenBow, nullptr, 1, nullptr, true, true, true, false, nullptr);
+            }
+
             st.isUsingBow = false;
+            st.prevRight = nullptr;
+            st.prevLeft = nullptr;
         }
     };
 }
