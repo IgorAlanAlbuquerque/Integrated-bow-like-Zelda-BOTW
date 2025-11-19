@@ -8,6 +8,9 @@
 //
 
 #include <windows.h>
+#ifdef GetObject
+    #undef GetObject
+#endif
 #pragma once
 #ifndef _DETOURS_H_
     #define _DETOURS_H_

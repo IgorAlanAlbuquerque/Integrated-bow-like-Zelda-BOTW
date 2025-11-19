@@ -8,6 +8,9 @@
 //
 
 #include <Windows.h>
+#ifdef GetObject
+    #undef GetObject
+#endif
 // #define DETOUR_DEBUG 1
 #define DETOURS_INTERNAL
 #include "detours.hpp"

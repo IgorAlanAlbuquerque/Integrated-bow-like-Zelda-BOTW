@@ -1,9 +1,13 @@
 #include <Windows.h>
+#ifdef GetObject
+    #undef GetObject
+#endif
 
 #include <filesystem>
 
 #include "BowConfig.h"
 #include "BowInput.h"
+#include "BowState.h"
 #include "BowStrings.h"
 #include "Hooks.h"
 #include "PCH.h"
@@ -51,6 +55,18 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
         if (message->type == SKSE::MessagingInterface::kDataLoaded) {
             Hooks::Install_Hooks();
             IntegratedBow_UI::Register();
+        }
+        if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
+            auto const& cfg = IntegratedBow::GetBowConfig();
+            const auto bowID = cfg.chosenBowFormID.load(std::memory_order_relaxed);
+            if (bowID != 0) {
+                auto* bow = RE::TESForm::LookupByID<RE::TESObjectWEAP>(bowID);
+                if (bow) {
+                    BowState::LoadChosenBow(bow);
+                } else {
+                    spdlog::warn("IntegratedBow: saved bow FormID 0x{:08X} not found, ignoring", bowID);
+                }
+            }
         }
     });
 

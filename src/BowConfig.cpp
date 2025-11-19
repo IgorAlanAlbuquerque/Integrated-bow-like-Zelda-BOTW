@@ -50,6 +50,9 @@ namespace IntegratedBow {
 
         const int btn = _getInt(ini, "Input", "GamepadButton", -1);
         gamepadButton.store(btn, std::memory_order_relaxed);
+
+        const int bow = _getInt(ini, "Bow", "ChosenBowFormID", 0);
+        chosenBowFormID.store(static_cast<std::uint32_t>(bow), std::memory_order_relaxed);
     }
 
     void BowConfig::Save() const {
@@ -65,6 +68,7 @@ namespace IntegratedBow {
         ini.SetLongValue("Input", "KeyboardScanCode",
                          static_cast<long>(keyboardScanCode.load(std::memory_order_relaxed)));
         ini.SetLongValue("Input", "GamepadButton", static_cast<long>(gamepadButton.load(std::memory_order_relaxed)));
+        ini.SetLongValue("Bow", "ChosenBowFormID", static_cast<long>(chosenBowFormID.load(std::memory_order_relaxed)));
 
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);
