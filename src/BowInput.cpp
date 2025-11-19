@@ -7,7 +7,6 @@
 
 #include "BowState.h"
 #include "PCH.h"
-
 namespace {
     bool g_holdMode = true;                 // NOSONAR
     std::uint32_t g_bowKeyScanCode = 0x2F;  // NOSONAR
@@ -78,7 +77,8 @@ namespace {
             }
 
             auto& st = BowState::Get();
-            auto* bow = st.chosenBow;
+
+            RE::TESObjectWEAP* bow = st.chosenBow.base ? st.chosenBow.base->As<RE::TESObjectWEAP>() : nullptr;
             if (!bow) {
                 return;
             }
@@ -87,12 +87,12 @@ namespace {
                 if (st.isUsingBow) {
                     return;
                 }
-                EnterBowMode(player, equipMgr, st, bow);
+                EnterBowMode(player, equipMgr, st);
             } else {
                 if (st.isUsingBow) {
                     ExitBowMode(player, equipMgr, st);
                 } else {
-                    EnterBowMode(player, equipMgr, st, bow);
+                    EnterBowMode(player, equipMgr, st);
                 }
             }
         }
@@ -163,21 +163,45 @@ namespace {
             actor->DrawWeaponMagicHands(drawn);
         }
 
+        static RE::ExtraDataList* GetPrimaryExtra(RE::InventoryEntryData* entry) {
+            if (!entry || !entry->extraLists) {
+                return nullptr;
+            }
+
+            for (auto* xList : *entry->extraLists) {
+                if (xList) {
+                    return xList;
+                }
+            }
+            return nullptr;
+        }
+
         static void EnterBowMode(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
-                                 BowState::IntegratedBowState& st, RE::TESObjectWEAP* bow) {
-            if (!player || !equipMgr || !bow) {
+                                 BowState::IntegratedBowState& st) {
+            if (!player || !equipMgr) {
                 return;
             }
-            auto* rightForm = player->GetEquippedObject(false);
-            auto* leftForm = player->GetEquippedObject(true);
 
-            BowState::SetPrevWeapons(rightForm, leftForm);
+            RE::TESObjectWEAP* bow = st.chosenBow.base ? st.chosenBow.base->As<RE::TESObjectWEAP>() : nullptr;
+            RE::ExtraDataList* bowExtra = st.chosenBow.extra;
+
+            auto* rightEntry = player->GetEquippedEntryData(false);
+            auto* leftEntry = player->GetEquippedEntryData(true);
+
+            auto* baseR = rightEntry ? const_cast<RE::TESBoundObject*>(rightEntry->GetObject()) : nullptr;
+            auto* extraR = GetPrimaryExtra(rightEntry);
+
+            auto* baseL = leftEntry ? const_cast<RE::TESBoundObject*>(leftEntry->GetObject()) : nullptr;
+            auto* extraL = GetPrimaryExtra(leftEntry);
+
+            BowState::SetPrevWeapons(baseR, extraR, baseL, extraL);
 
             const bool alreadyDrawn = IsWeaponDrawn(player);
             st.wasCombatPosed = alreadyDrawn;
 
             st.isEquipingBow = true;
-            equipMgr->EquipObject(player, bow, nullptr, 1, nullptr, true, true, true, false);
+            st.isUsingBow = false;
+            equipMgr->EquipObject(player, bow, bowExtra, 1, nullptr, true, true, true, false);
 
             if (!alreadyDrawn) {
                 SetWeaponDrawn(player, true);
@@ -198,18 +222,26 @@ namespace {
                 return;
             }
 
+            RE::TESBoundObject* prevRightBase = st.prevRight.base;
+            RE::ExtraDataList* prevRightExtra = st.prevRight.extra;
+
+            RE::TESBoundObject* prevLeftBase = st.prevLeft.base;
+            RE::ExtraDataList* prevLeftExtra = st.prevLeft.extra;
+
+            RE::TESBoundObject* chosenBowBase = st.chosenBow.base;
+            RE::ExtraDataList* chosenBowExtra = st.chosenBow.extra;
+
             if (!st.wasCombatPosed && !player->IsInCombat()) {
                 SetWeaponDrawn(player, false);
 
-                RE::TESBoundObject* prevRight = st.prevRight;
-                RE::TESBoundObject* prevLeft = st.prevLeft;
-                RE::TESObjectWEAP* chosenBow = st.chosenBow;
-
                 st.isUsingBow = false;
-                st.prevRight = nullptr;
-                st.prevLeft = nullptr;
+                st.prevRight.base = nullptr;
+                st.prevRight.extra = nullptr;
+                st.prevLeft.base = nullptr;
+                st.prevLeft.extra = nullptr;
 
-                std::thread([prevRight, prevLeft, chosenBow]() {
+                std::thread([prevRightBase, prevRightExtra, prevLeftBase, prevLeftExtra, chosenBowBase,
+                             chosenBowExtra]() {
                     std::this_thread::sleep_for(std::chrono::milliseconds(950));
 
                     auto* task = SKSE::GetTaskInterface();
@@ -217,45 +249,51 @@ namespace {
                         return;
                     }
 
-                    task->AddTask([prevRight, prevLeft, chosenBow]() {
-                        auto* player = RE::PlayerCharacter::GetSingleton();
-                        auto* equipMgr = RE::ActorEquipManager::GetSingleton();
-                        if (!player || !equipMgr) {
-                            return;
-                        }
+                    task->AddTask(
+                        [prevRightBase, prevRightExtra, prevLeftBase, prevLeftExtra, chosenBowBase, chosenBowExtra]() {
+                            auto* player = RE::PlayerCharacter::GetSingleton();
+                            auto* equipMgr = RE::ActorEquipManager::GetSingleton();
+                            if (!player || !equipMgr) {
+                                return;
+                            }
 
-                        if (prevRight) {
-                            equipMgr->EquipObject(player, prevRight, nullptr, 1, nullptr, true, true, true, false);
-                        }
-                        if (prevLeft) {
-                            equipMgr->EquipObject(player, prevLeft, nullptr, 1, nullptr, true, true, true, false);
-                        }
+                            if (prevRightBase) {
+                                equipMgr->EquipObject(player, prevRightBase, prevRightExtra, 1, nullptr, true, true,
+                                                      true, false);
+                            }
+                            if (prevLeftBase) {
+                                equipMgr->EquipObject(player, prevLeftBase, prevLeftExtra, 1, nullptr, true, true, true,
+                                                      false);
+                            }
 
-                        if (!prevRight && !prevLeft && chosenBow) {
-                            equipMgr->UnequipObject(player, chosenBow, nullptr, 1, nullptr, true, true, true, false,
-                                                    nullptr);
-                        }
-                    });
+                            if (!prevRightBase && !prevLeftBase && chosenBowBase) {
+                                equipMgr->UnequipObject(player, chosenBowBase, chosenBowExtra, 1, nullptr, true, true,
+                                                        true, false, nullptr);
+                            }
+                        });
                 }).detach();
 
                 return;
             }
 
-            if (st.prevRight) {
-                equipMgr->EquipObject(player, st.prevRight, nullptr, 1, nullptr, true, true, true, false);
+            if (st.prevRight.base) {
+                equipMgr->EquipObject(player, st.prevRight.base, st.prevRight.extra, 1, nullptr, true, true, true,
+                                      false);
             }
-            if (st.prevLeft) {
-                equipMgr->EquipObject(player, st.prevLeft, nullptr, 1, nullptr, true, true, true, false);
+            if (st.prevLeft.base) {
+                equipMgr->EquipObject(player, st.prevLeft.base, st.prevLeft.extra, 1, nullptr, true, true, true, false);
             }
 
-            if (!st.prevRight && !st.prevLeft && st.chosenBow) {
-                equipMgr->UnequipObject(player, st.chosenBow, nullptr, 1, nullptr, true, true, true, false, nullptr);
+            if (!st.prevRight.base && !st.prevLeft.base && st.chosenBow.base) {
+                equipMgr->UnequipObject(player, st.chosenBow.base, st.chosenBow.extra, 1, nullptr, true, true, true,
+                                        false, nullptr);
             }
 
             st.isUsingBow = false;
-            st.prevRight = nullptr;
-            st.prevLeft = nullptr;
-            bowDrawed = false;
+            st.prevRight.base = nullptr;
+            st.prevRight.extra = nullptr;
+            st.prevLeft.base = nullptr;
+            st.prevLeft.extra = nullptr;
         }
     };
 }

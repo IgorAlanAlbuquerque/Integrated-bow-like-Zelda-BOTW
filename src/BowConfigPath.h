@@ -1,5 +1,8 @@
 #pragma once
 #include <windows.h>
+#ifdef GetObject
+    #undef GetObject
+#endif
 
 #include <filesystem>
 #include <vector>

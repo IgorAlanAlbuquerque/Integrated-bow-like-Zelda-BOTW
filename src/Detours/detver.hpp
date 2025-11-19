@@ -11,6 +11,9 @@
 #include "winver.h"
 #if 0
     #include <windows.h>
+    #ifdef GetObject
+        #undef GetObject
+    #endif
 
     #include <detours.hpp>
 #else
