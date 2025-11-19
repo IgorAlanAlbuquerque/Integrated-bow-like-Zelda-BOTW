@@ -1,5 +1,7 @@
 #include "Hooks.h"
 
+#include <type_traits>
+
 #include "BowInput.h"
 #include "BowState.h"
 #include "HookUtil.hpp"

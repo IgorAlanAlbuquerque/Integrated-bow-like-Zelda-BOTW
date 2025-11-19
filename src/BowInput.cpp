@@ -78,8 +78,12 @@ namespace {
 
             auto& st = BowState::Get();
 
-            RE::TESObjectWEAP* bow = st.chosenBow.base ? st.chosenBow.base->As<RE::TESObjectWEAP>() : nullptr;
-            if (!bow) {
+            if (!BowState::EnsureChosenBowInInventory()) {
+                return;
+            }
+
+            if (RE::TESObjectWEAP const* bow = st.chosenBow.base ? st.chosenBow.base->As<RE::TESObjectWEAP>() : nullptr;
+                !bow) {
                 return;
             }
 
