@@ -1,6 +1,7 @@
 
 #include "BowInput.h"
 
+#include <atomic>
 #include <chrono>
 #include <thread>
 
@@ -11,6 +12,7 @@ namespace {
     bool g_holdMode = true;                 // NOSONAR
     std::uint32_t g_bowKeyScanCode = 0x2F;  // NOSONAR
     int g_bowGamepadButton = -1;            // NOSONAR
+    std::atomic_bool bowDrawed = false;     // NOSONAR
 
     class IntegratedBowInputHandler : public RE::BSTEventSink<RE::InputEvent*> {
     public:
@@ -107,7 +109,38 @@ namespace {
 
             auto& st = BowState::Get();
             if (st.isUsingBow) {
-                ExitBowMode(player, equipMgr, st);
+                if (bowDrawed.load()) {
+                    ExitBowMode(player, equipMgr, st);
+                    return;
+                }
+
+                RE::NiPointer<RE::Actor> playerHandle{player};
+
+                std::thread([playerHandle]() {
+                    while (!bowDrawed.load()) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    }
+
+                    auto* task = SKSE::GetTaskInterface();
+                    if (!task) {
+                        return;
+                    }
+
+                    task->AddTask([]() {
+                        auto* player = RE::PlayerCharacter::GetSingleton();
+                        auto* equipMgr = RE::ActorEquipManager::GetSingleton();
+                        if (!player || !equipMgr) {
+                            return;
+                        }
+
+                        auto& st = BowState::Get();
+                        if (!st.isUsingBow) {
+                            return;
+                        }
+
+                        ExitBowMode(player, equipMgr, st);
+                    });
+                }).detach();
             }
         }
 
@@ -152,6 +185,11 @@ namespace {
 
             st.isEquipingBow = false;
             st.isUsingBow = true;
+            bowDrawed = false;
+            std::thread([]() {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1050));
+                bowDrawed = true;
+            }).detach();
         }
 
         static void ExitBowMode(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
@@ -162,44 +200,62 @@ namespace {
 
             if (!st.wasCombatPosed && !player->IsInCombat()) {
                 SetWeaponDrawn(player, false);
+
+                RE::TESBoundObject* prevRight = st.prevRight;
+                RE::TESBoundObject* prevLeft = st.prevLeft;
+                RE::TESObjectWEAP* chosenBow = st.chosenBow;
+
+                st.isUsingBow = false;
+                st.prevRight = nullptr;
+                st.prevLeft = nullptr;
+
+                std::thread([prevRight, prevLeft, chosenBow]() {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(950));
+
+                    auto* task = SKSE::GetTaskInterface();
+                    if (!task) {
+                        return;
+                    }
+
+                    task->AddTask([prevRight, prevLeft, chosenBow]() {
+                        auto* player = RE::PlayerCharacter::GetSingleton();
+                        auto* equipMgr = RE::ActorEquipManager::GetSingleton();
+                        if (!player || !equipMgr) {
+                            return;
+                        }
+
+                        if (prevRight) {
+                            equipMgr->EquipObject(player, prevRight, nullptr, 1, nullptr, true, true, true, false);
+                        }
+                        if (prevLeft) {
+                            equipMgr->EquipObject(player, prevLeft, nullptr, 1, nullptr, true, true, true, false);
+                        }
+
+                        if (!prevRight && !prevLeft && chosenBow) {
+                            equipMgr->UnequipObject(player, chosenBow, nullptr, 1, nullptr, true, true, true, false,
+                                                    nullptr);
+                        }
+                    });
+                }).detach();
+
+                return;
             }
 
-            RE::TESBoundObject* prevRight = st.prevRight;
-            RE::TESBoundObject* prevLeft = st.prevLeft;
-            RE::TESObjectWEAP* chosenBow = st.chosenBow;
+            if (st.prevRight) {
+                equipMgr->EquipObject(player, st.prevRight, nullptr, 1, nullptr, true, true, true, false);
+            }
+            if (st.prevLeft) {
+                equipMgr->EquipObject(player, st.prevLeft, nullptr, 1, nullptr, true, true, true, false);
+            }
+
+            if (!st.prevRight && !st.prevLeft && st.chosenBow) {
+                equipMgr->UnequipObject(player, st.chosenBow, nullptr, 1, nullptr, true, true, true, false, nullptr);
+            }
 
             st.isUsingBow = false;
             st.prevRight = nullptr;
             st.prevLeft = nullptr;
-
-            std::thread([prevRight, prevLeft, chosenBow]() {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
-                auto* task = SKSE::GetTaskInterface();
-                if (!task) {
-                    return;
-                }
-
-                task->AddTask([prevRight, prevLeft, chosenBow]() {
-                    auto* player = RE::PlayerCharacter::GetSingleton();
-                    auto* equipMgr = RE::ActorEquipManager::GetSingleton();
-                    if (!player || !equipMgr) {
-                        return;
-                    }
-
-                    if (prevRight) {
-                        equipMgr->EquipObject(player, prevRight, nullptr, 1, nullptr, true, true, true, false);
-                    }
-                    if (prevLeft) {
-                        equipMgr->EquipObject(player, prevLeft, nullptr, 1, nullptr, true, true, true, false);
-                    }
-
-                    if (!prevRight && !prevLeft && chosenBow) {
-                        equipMgr->UnequipObject(player, chosenBow, nullptr, 1, nullptr, true, true, true, false,
-                                                nullptr);
-                    }
-                });
-            }).detach();
+            bowDrawed = false;
         }
     };
 }
