@@ -76,7 +76,7 @@ namespace IntegratedBow {
     }
 
     BowConfig& GetBowConfig() {
-        static BowConfig g{};
+        static BowConfig g{};  // NOSONAR: Static state
         return g;
     }
 }

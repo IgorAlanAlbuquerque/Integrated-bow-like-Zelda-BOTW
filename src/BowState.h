@@ -140,13 +140,13 @@ namespace BowState {
         constexpr const char* kChosenTag = " (chosen)";
         constexpr std::size_t kTagLen = 9;
 
-        for (auto& [obj, data] : inventory) {
+        for (auto const& [obj, data] : inventory) {
             if (obj != base) {
                 continue;
             }
 
             auto& entryPtr = data.second;
-            RE::InventoryEntryData* entry = entryPtr.get();
+            RE::InventoryEntryData const* entry = entryPtr.get();
 
             if (!entry || !entry->extraLists) {
                 continue;
@@ -170,7 +170,7 @@ namespace BowState {
                 if (std::memcmp(dispName + (len - kTagLen), kChosenTag, kTagLen) == 0) {
                     st.chosenBow.base = base;
                     st.chosenBow.extra = extra;
-                    spdlog::info("[IntegratedBow] LoadChosenBow: found chosen instance in inventory: {}", dispName);
+
                     return;
                 }
             }
@@ -179,8 +179,53 @@ namespace BowState {
 
     inline void ClearChosenBow() {
         auto& st = Get();
+        auto& cfg = IntegratedBow::GetBowConfig();
+
+        if (st.chosenBow.base && st.chosenBow.extra) {
+            detail::RemoveChosenTagFromInstance(st.chosenBow.base, st.chosenBow.extra);
+        }
+
         st.chosenBow.base = nullptr;
         st.chosenBow.extra = nullptr;
+
+        cfg.chosenBowFormID.store(0u, std::memory_order_relaxed);
+        cfg.Save();
+    }
+
+    inline bool EnsureChosenBowInInventory() {
+        auto const& st = Get();
+
+        if (!st.chosenBow.base || !st.chosenBow.extra) {
+            return false;
+        }
+
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player) {
+            return false;
+        }
+
+        auto inventory = player->GetInventory([&](RE::TESBoundObject& obj) { return &obj == st.chosenBow.base; });
+
+        for (auto const& [obj, data] : inventory) {
+            if (obj != st.chosenBow.base) {
+                continue;
+            }
+
+            auto const& entryPtr = data.second;
+            RE::InventoryEntryData const* entry = entryPtr.get();
+            if (!entry || !entry->extraLists) {
+                continue;
+            }
+
+            for (auto const* extra : *entry->extraLists) {
+                if (extra == st.chosenBow.extra) {
+                    return true;
+                }
+            }
+        }
+
+        ClearChosenBow();
+        return false;
     }
 
     inline bool IsEquipingBow() { return Get().isEquipingBow; }
