@@ -7,27 +7,91 @@
 
 namespace BowState {
     namespace detail {
+        static constexpr std::string_view kQualityTags[] = {"fine",     "superior", "exquisite",
+                                                            "flawless", "epic",     "legendary"};
+        inline bool IsTemperingTag(std::string_view inside) {
+            std::string lower;
+            lower.reserve(inside.size());
+            for (char c : inside) {
+                lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+            }
 
+            for (auto q : kQualityTags) {
+                if (lower == q) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        inline void StripTemperingSuffixes(std::string& name) {
+            for (;;) {
+                while (!name.empty() && name.back() == ' ') {
+                    name.pop_back();
+                }
+
+                if (name.size() < 3 || name.back() != ')') {
+                    break;
+                }
+
+                auto open = name.rfind('(');
+                if (open == std::string::npos || open == 0 || name[open - 1] != ' ') {
+                    break;
+                }
+
+                if (std::string_view inside(name.data() + open + 1, name.size() - open - 2); !IsTemperingTag(inside)) {
+                    break;
+                }
+
+                name.erase(open - 1);
+            }
+
+            while (!name.empty() && name.back() == ' ') {
+                name.pop_back();
+            }
+        }
         inline void ApplyChosenTagToInstance(RE::TESBoundObject* base, RE::ExtraDataList* extra) {
             if (!base || !extra) {
                 return;
             }
 
-            const char* cstr = extra->GetDisplayName(base);
+            auto* tdd = extra->GetExtraTextDisplayData();
+            const char* cstr = nullptr;
+
+            if (tdd) {
+                cstr = tdd->displayName.c_str();
+            }
+
+            if (!cstr || !*cstr) {
+                cstr = extra->GetDisplayName(base);
+            }
+
+            if (!cstr || !*cstr) {
+                cstr = base->GetName();
+            }
             if (!cstr || !*cstr) {
                 return;
             }
 
-            constexpr std::string_view tag{" (chosen)"};
-
+            constexpr std::string_view chosenTag{" (chosen)"};
             std::string curName{cstr};
-            if (curName.ends_with(tag)) {
-                return;
+
+            for (;;) {
+                auto pos = curName.find(chosenTag);
+                if (pos == std::string::npos) {
+                    break;
+                }
+                curName.erase(pos, chosenTag.size());
             }
 
-            curName += tag;
+            StripTemperingSuffixes(curName);
 
-            auto* tdd = extra->GetExtraTextDisplayData();
+            if (!curName.empty()) {
+                curName += " (chosen)";
+            } else {
+                curName = "(chosen)";
+            }
+
             if (!tdd) {
                 tdd = new RE::ExtraTextDisplayData(base, 1.0f);
                 if (!tdd) {
@@ -50,24 +114,36 @@ namespace BowState {
                 return;
             }
 
-            const char* cstr = tdd->GetDisplayName(base, 1.0f);
+            const char* cstr = tdd->displayName.c_str();
             if (!cstr || !*cstr) {
+                extra->RemoveByType(RE::ExtraDataType::kTextDisplayData);
                 return;
             }
 
             std::string curName = cstr;
             constexpr std::string_view tag{" (chosen)"};
 
-            if (!curName.ends_with(tag)) {
+            auto pos = curName.rfind(tag);
+            if (pos == std::string::npos) {
                 return;
             }
 
-            curName.erase(curName.size() - tag.size());
+            curName.erase(pos, tag.size());
 
-            tdd->SetName(curName.c_str());
+            while (!curName.empty() && curName.back() == ' ') {
+                curName.pop_back();
+            }
+
+            StripTemperingSuffixes(curName);
+
+            if (curName.empty()) {
+                extra->RemoveByType(RE::ExtraDataType::kTextDisplayData);
+            } else {
+                tdd->SetName(curName.c_str());
+            }
         }
-
     }
+
     struct ChosenInstance {
         RE::TESBoundObject* base{nullptr};
         RE::ExtraDataList* extra{nullptr};
