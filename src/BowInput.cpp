@@ -5,13 +5,80 @@
 #include <chrono>
 #include <thread>
 
+#include "BowConfig.h"
 #include "BowState.h"
 #include "PCH.h"
+
 namespace {
     bool g_holdMode = true;                 // NOSONAR
     std::uint32_t g_bowKeyScanCode = 0x2F;  // NOSONAR
     int g_bowGamepadButton = -1;            // NOSONAR
     std::atomic_bool bowDrawed = false;     // NOSONAR
+    std::atomic_uint64_t g_exitToken{0};    // NOSONAR
+
+    inline bool IsAutoDrawEnabled() {
+        auto& cfg = IntegratedBow::GetBowConfig();
+        return cfg.autoDrawEnabled.load(std::memory_order_relaxed);
+    }
+
+    inline float GetSheathedDelayMs() {
+        auto& cfg = IntegratedBow::GetBowConfig();
+        float secs = cfg.sheathedDelaySeconds.load(std::memory_order_relaxed);
+        if (secs < 0.0f) {
+            secs = 0.0f;
+        }
+        return secs * 1000.0f;
+    }
+
+    void StartAutoAttackDraw() {
+        using namespace BowState::detail;
+
+        auto* ev = MakeAttackButtonEvent(1.0f, 0.0f);
+        DispatchAttackButtonEvent(ev);
+
+        spdlog::info("[IntegratedBow] AutoAttack: DOWN");
+    }
+
+    void StopAutoAttackDraw() {
+        using namespace BowState::detail;
+
+        auto* ev = MakeAttackButtonEvent(0.0f, 0.1f);
+        DispatchAttackButtonEvent(ev);
+
+        spdlog::info("[IntegratedBow] AutoAttack: UP");
+    }
+
+    void ScheduleAutoAttackDraw() {
+        const bool autoDraw = IsAutoDrawEnabled();
+        const bool holdMode = g_holdMode;
+
+        bowDrawed.store(false, std::memory_order_relaxed);
+        BowState::SetAutoAttackHeld(false);
+
+        std::thread([autoDraw, holdMode]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1050));
+            bowDrawed.store(true, std::memory_order_relaxed);
+
+            if (!autoDraw || !holdMode) {
+                return;
+            }
+
+            auto* task = SKSE::GetTaskInterface();
+            if (!task) {
+                return;
+            }
+
+            task->AddTask([]() {
+                auto& st = BowState::Get();
+                if (!st.isUsingBow || BowState::IsAutoAttackHeld()) {
+                    return;
+                }
+
+                BowState::SetAutoAttackHeld(true);
+                StartAutoAttackDraw();
+            });
+        }).detach();
+    }
 
     class IntegratedBowInputHandler : public RE::BSTEventSink<RE::InputEvent*> {
     public:
@@ -72,12 +139,13 @@ namespace {
 
         void OnKeyPressed(RE::PlayerCharacter* player) const {
             auto* equipMgr = RE::ActorEquipManager::GetSingleton();
+
+            g_exitToken.fetch_add(1, std::memory_order_acq_rel);
             if (!equipMgr) {
                 return;
             }
 
             auto& st = BowState::Get();
-
             if (!BowState::EnsureChosenBowInInventory()) {
                 return;
             }
@@ -88,10 +156,16 @@ namespace {
             }
 
             if (g_holdMode) {
-                if (st.isUsingBow) {
+                if (!st.isUsingBow) {
+                    EnterBowMode(player, equipMgr, st);
                     return;
                 }
-                EnterBowMode(player, equipMgr, st);
+                if (bowDrawed.load(std::memory_order_relaxed)) {
+                    BowState::SetAutoAttackHeld(true);
+                    StartAutoAttackDraw();
+                } else {
+                    ScheduleAutoAttackDraw();
+                }
             } else {
                 if (st.isUsingBow) {
                     ExitBowMode(player, equipMgr, st);
@@ -112,17 +186,32 @@ namespace {
             }
 
             auto& st = BowState::Get();
-            if (st.isUsingBow) {
-                if (bowDrawed.load()) {
+            if (!st.isUsingBow) {
+                return;
+            }
+
+            const bool autoDraw = IsAutoDrawEnabled();
+            const float delayMsF = GetSheathedDelayMs();
+            const auto delayMs = static_cast<int>(delayMsF + 0.5f);
+
+            if (bowDrawed.load(std::memory_order_relaxed)) {
+                if (autoDraw && BowState::IsAutoAttackHeld()) {
+                    StopAutoAttackDraw();
+                    BowState::SetAutoAttackHeld(false);
+                }
+
+                if (delayMs <= 0) {
                     ExitBowMode(player, equipMgr, st);
                     return;
                 }
 
-                RE::NiPointer<RE::Actor> playerHandle{player};
+                const auto myToken = g_exitToken.fetch_add(1, std::memory_order_acq_rel) + 1;
 
-                std::thread([playerHandle]() {
-                    while (!bowDrawed.load()) {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                std::thread([delayMs, autoDraw, myToken]() {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+
+                    if (g_exitToken.load(std::memory_order_acquire) != myToken) {
+                        return;
                     }
 
                     auto* task = SKSE::GetTaskInterface();
@@ -130,7 +219,11 @@ namespace {
                         return;
                     }
 
-                    task->AddTask([]() {
+                    task->AddTask([autoDraw, myToken]() {
+                        if (g_exitToken.load(std::memory_order_acquire) != myToken) {
+                            return;
+                        }
+
                         auto* player = RE::PlayerCharacter::GetSingleton();
                         auto* equipMgr = RE::ActorEquipManager::GetSingleton();
                         if (!player || !equipMgr) {
@@ -142,10 +235,68 @@ namespace {
                             return;
                         }
 
+                        if (autoDraw && BowState::IsAutoAttackHeld()) {
+                            StopAutoAttackDraw();
+                            BowState::SetAutoAttackHeld(false);
+                        }
+
                         ExitBowMode(player, equipMgr, st);
                     });
                 }).detach();
+
+                return;
             }
+
+            RE::NiPointer<RE::Actor> playerHandle{player};
+
+            const auto myToken = g_exitToken.fetch_add(1, std::memory_order_acq_rel) + 1;
+
+            std::thread([playerHandle, autoDraw, delayMs, myToken]() {
+                while (!bowDrawed.load(std::memory_order_relaxed)) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+                    if (g_exitToken.load(std::memory_order_acquire) != myToken) {
+                        return;
+                    }
+                }
+
+                if (delayMs > 0) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+                }
+
+                if (g_exitToken.load(std::memory_order_acquire) != myToken) {
+                    return;
+                }
+
+                auto* task = SKSE::GetTaskInterface();
+                if (!task) {
+                    return;
+                }
+
+                task->AddTask([autoDraw, myToken]() {
+                    if (g_exitToken.load(std::memory_order_acquire) != myToken) {
+                        return;
+                    }
+
+                    auto* player = RE::PlayerCharacter::GetSingleton();
+                    auto* equipMgr = RE::ActorEquipManager::GetSingleton();
+                    if (!player || !equipMgr) {
+                        return;
+                    }
+
+                    auto& st = BowState::Get();
+                    if (!st.isUsingBow) {
+                        return;
+                    }
+
+                    if (autoDraw && BowState::IsAutoAttackHeld()) {
+                        StopAutoAttackDraw();
+                        BowState::SetAutoAttackHeld(false);
+                    }
+
+                    ExitBowMode(player, equipMgr, st);
+                });
+            }).detach();
         }
 
         static bool IsWeaponDrawn(RE::Actor* actor) {
@@ -213,11 +364,9 @@ namespace {
 
             st.isEquipingBow = false;
             st.isUsingBow = true;
-            bowDrawed = false;
-            std::thread([]() {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1050));
-                bowDrawed = true;
-            }).detach();
+            bowDrawed.store(false, std::memory_order_relaxed);
+            BowState::SetAutoAttackHeld(false);
+            ScheduleAutoAttackDraw();
         }
 
         static void ExitBowMode(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,

@@ -22,6 +22,20 @@ namespace {
         const char* v = ini.GetValue(sec, k, nullptr);
         return v ? std::string{v} : std::string{defVal};
     }
+
+    float _getFloat(CSimpleIniA& ini, const char* sec, const char* k, float defVal) {
+        const char* v = ini.GetValue(sec, k, nullptr);
+        if (!v) return defVal;
+        char* end = nullptr;
+        float out = std::strtof(v, &end);
+        return end && end != v ? out : defVal;
+    }
+
+    bool _getBool(CSimpleIniA& ini, const char* sec, const char* k, bool defVal) {
+        const char* v = ini.GetValue(sec, k, nullptr);
+        if (!v) return defVal;
+        return (std::strcmp(v, "true") == 0 || std::strcmp(v, "1") == 0);
+    }
 }
 
 namespace IntegratedBow {
@@ -53,6 +67,8 @@ namespace IntegratedBow {
 
         const int bow = _getInt(ini, "Bow", "ChosenBowFormID", 0);
         chosenBowFormID.store(static_cast<std::uint32_t>(bow), std::memory_order_relaxed);
+        autoDrawEnabled.store(_getBool(ini, "Bow", "AutoDrawEnabled", false), std::memory_order_relaxed);
+        sheathedDelaySeconds.store(_getFloat(ini, "Bow", "SheathedDelaySeconds", 0.0f), std::memory_order_relaxed);
     }
 
     void BowConfig::Save() const {
@@ -69,6 +85,9 @@ namespace IntegratedBow {
                          static_cast<long>(keyboardScanCode.load(std::memory_order_relaxed)));
         ini.SetLongValue("Input", "GamepadButton", static_cast<long>(gamepadButton.load(std::memory_order_relaxed)));
         ini.SetLongValue("Bow", "ChosenBowFormID", static_cast<long>(chosenBowFormID.load(std::memory_order_relaxed)));
+        ini.SetBoolValue("Bow", "AutoDrawEnabled", autoDrawEnabled.load(std::memory_order_relaxed));
+        ini.SetDoubleValue("Bow", "SheathedDelaySeconds",
+                           static_cast<double>(sheathedDelaySeconds.load(std::memory_order_relaxed)));
 
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);
