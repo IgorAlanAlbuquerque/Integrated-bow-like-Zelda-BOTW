@@ -59,16 +59,38 @@ namespace IntegratedBow {
         }
         mode.store(newMode, std::memory_order_relaxed);
 
-        const int key = _getInt(ini, "Input", "KeyboardScanCode", 0x2F);
-        keyboardScanCode.store(static_cast<std::uint32_t>(key), std::memory_order_relaxed);
+        const int k1 = _getInt(ini, "Input", "KeyboardScanCode1", 0x2F);
+        const int k2 = _getInt(ini, "Input", "KeyboardScanCode2", -1);
+        const int k3 = _getInt(ini, "Input", "KeyboardScanCode3", -1);
 
-        const int btn = _getInt(ini, "Input", "GamepadButton", -1);
-        gamepadButton.store(btn, std::memory_order_relaxed);
+        keyboardScanCode1.store(k1, std::memory_order_relaxed);
+        keyboardScanCode2.store(k2, std::memory_order_relaxed);
+        keyboardScanCode3.store(k3, std::memory_order_relaxed);
+
+        const int gp1 = _getInt(ini, "Input", "GamepadButton1", -1);
+        const int gp2 = _getInt(ini, "Input", "GamepadButton2", -1);
+        const int gp3 = _getInt(ini, "Input", "GamepadButton3", -1);
+
+        gamepadButton1.store(gp1, std::memory_order_relaxed);
+        gamepadButton2.store(gp2, std::memory_order_relaxed);
+        gamepadButton3.store(gp3, std::memory_order_relaxed);
 
         const int bow = _getInt(ini, "Bow", "ChosenBowFormID", 0);
         chosenBowFormID.store(static_cast<std::uint32_t>(bow), std::memory_order_relaxed);
-        autoDrawEnabled.store(_getBool(ini, "Bow", "AutoDrawEnabled", false), std::memory_order_relaxed);
-        sheathedDelaySeconds.store(_getFloat(ini, "Bow", "SheathedDelaySeconds", 0.0f), std::memory_order_relaxed);
+
+        const int autoDrawInt = _getInt(ini, "Input", "AutoDrawEnabled", 1);
+        autoDrawEnabled.store(autoDrawInt != 0, std::memory_order_relaxed);
+
+        const char* delayStr = ini.GetValue("Input", "SheathedDelaySeconds", nullptr);
+        float delay = sheathedDelaySeconds.load(std::memory_order_relaxed);
+        if (delayStr) {
+            char* end = nullptr;
+            const float v = std::strtof(delayStr, &end);
+            if (end && *end == '\0' && v >= 0.0f) {
+                delay = v;
+            }
+        }
+        sheathedDelaySeconds.store(delay, std::memory_order_relaxed);
     }
 
     void BowConfig::Save() const {
@@ -81,9 +103,22 @@ namespace IntegratedBow {
         const char* modeStr = (m == BowMode::Press) ? "Press" : "Hold";
 
         ini.SetValue("Input", "Mode", modeStr);
-        ini.SetLongValue("Input", "KeyboardScanCode",
-                         static_cast<long>(keyboardScanCode.load(std::memory_order_relaxed)));
-        ini.SetLongValue("Input", "GamepadButton", static_cast<long>(gamepadButton.load(std::memory_order_relaxed)));
+        const int k1 = keyboardScanCode1.load(std::memory_order_relaxed);
+        const int k2 = keyboardScanCode2.load(std::memory_order_relaxed);
+        const int k3 = keyboardScanCode3.load(std::memory_order_relaxed);
+
+        ini.SetLongValue("Input", "KeyboardScanCode1", static_cast<long>(k1));
+        ini.SetLongValue("Input", "KeyboardScanCode2", static_cast<long>(k2));
+        ini.SetLongValue("Input", "KeyboardScanCode3", static_cast<long>(k3));
+
+        const int gp1 = gamepadButton1.load(std::memory_order_relaxed);
+        const int gp2 = gamepadButton2.load(std::memory_order_relaxed);
+        const int gp3 = gamepadButton3.load(std::memory_order_relaxed);
+
+        ini.SetLongValue("Input", "GamepadButton1", static_cast<long>(gp1));
+        ini.SetLongValue("Input", "GamepadButton2", static_cast<long>(gp2));
+        ini.SetLongValue("Input", "GamepadButton3", static_cast<long>(gp3));
+
         ini.SetLongValue("Bow", "ChosenBowFormID", static_cast<long>(chosenBowFormID.load(std::memory_order_relaxed)));
         ini.SetBoolValue("Bow", "AutoDrawEnabled", autoDrawEnabled.load(std::memory_order_relaxed));
         ini.SetDoubleValue("Bow", "SheathedDelaySeconds",

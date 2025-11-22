@@ -44,8 +44,13 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
 
     const bool hold = (cfg.mode.load(std::memory_order_relaxed) == IntegratedBow::BowMode::Hold);
     BowInput::SetHoldMode(hold);
-    BowInput::SetKeyScanCode(cfg.keyboardScanCode.load(std::memory_order_relaxed));
-    BowInput::SetGamepadButton(cfg.gamepadButton.load(std::memory_order_relaxed));
+    BowInput::SetKeyScanCodes(cfg.keyboardScanCode1.load(std::memory_order_relaxed),
+                              cfg.keyboardScanCode2.load(std::memory_order_relaxed),
+                              cfg.keyboardScanCode3.load(std::memory_order_relaxed));
+
+    BowInput::SetGamepadButtons(cfg.gamepadButton1.load(std::memory_order_relaxed),
+                                cfg.gamepadButton2.load(std::memory_order_relaxed),
+                                cfg.gamepadButton3.load(std::memory_order_relaxed));
 
     SKSE::AllocTrampoline(1 << 14);
 
