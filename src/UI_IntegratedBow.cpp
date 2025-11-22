@@ -89,6 +89,40 @@ void __stdcall IntegratedBow_UI::DrawConfig() {
     }
 
     ImGui::Separator();
+
+    {
+        if (bool autoDraw = cfg.autoDrawEnabled.load(std::memory_order_relaxed); ImGui::Checkbox(
+                IntegratedBow::Strings::Get("Item_AutoDrawEnabled", "Auto draw arrow").c_str(), &autoDraw)) {
+            cfg.autoDrawEnabled.store(autoDraw, std::memory_order_relaxed);
+        }
+
+        ImGui::SameLine();
+        ImGui::TextDisabled(
+            "%s", IntegratedBow::Strings::Get(
+                      "Item_AutoDrawEnabled_Tip",
+                      "If enabled, the bow will automatically start drawing an arrow while holding the hotkey.")
+                      .c_str());
+    }
+
+    {
+        float delaySec = cfg.sheathedDelaySeconds.load(std::memory_order_relaxed);
+        ImGui::SetNextItemWidth(150.0f);
+
+        if (ImGui::InputFloat(IntegratedBow::Strings::Get("Item_sheathedDelay", "S delay (s)").c_str(), &delaySec, 0.1f,
+                              1.0f, "%.2f")) {
+            if (delaySec < 0.0f) delaySec = 0.0f;
+            cfg.sheathedDelaySeconds.store(delaySec, std::memory_order_relaxed);
+        }
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s",
+                            IntegratedBow::Strings::Get(
+                                "Item_sheathedDelay_Tip",
+                                "Time in seconds after releasing the key (in hold mode) for the weapon to be sheathed.")
+                                .c_str());
+    }
+
+    ImGui::Separator();
     ImGui::TextDisabled("%s", IntegratedBow::Strings::Get("Item_Tip", "Tip: -1 disables gamepad binding.").c_str());
 }
 

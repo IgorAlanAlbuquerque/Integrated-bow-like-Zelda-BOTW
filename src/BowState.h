@@ -142,6 +142,40 @@ namespace BowState {
                 tdd->SetName(curName.c_str());
             }
         }
+
+        inline RE::BSFixedString GetAttackUserEvent() {
+            static RE::BSFixedString ev{"Right Attack/Block"};
+            return ev;
+        }
+
+        constexpr std::uint32_t kAttackMouseIdCode = 0;
+
+        inline RE::ButtonEvent* MakeAttackButtonEvent(float value, float heldSecs) {
+            return RE::ButtonEvent::Create(RE::INPUT_DEVICE::kMouse, GetAttackUserEvent(), kAttackMouseIdCode, value,
+                                           heldSecs);
+        }
+
+        inline void DispatchAttackButtonEvent(RE::ButtonEvent* ev) {
+            if (!ev) {
+                return;
+            }
+
+            auto* pc = RE::PlayerControls::GetSingleton();
+            if (!pc) {
+                return;
+            }
+
+            auto* handler = pc->attackBlockHandler;
+            if (!handler) {
+                return;
+            }
+
+            if (!handler->CanProcess(ev)) {
+                return;
+            }
+
+            handler->ProcessButton(ev, &pc->data);
+        }
     }
 
     struct ChosenInstance {
@@ -156,6 +190,7 @@ namespace BowState {
         bool isUsingBow{false};
         bool isEquipingBow{false};
         bool wasCombatPosed{false};
+        bool isAutoAttackHeld{false};
     };
 
     inline IntegratedBowState& Get() {
@@ -268,6 +303,10 @@ namespace BowState {
         cfg.Save();
     }
 
+    inline bool IsAutoAttackHeld() { return Get().isAutoAttackHeld; }
+
+    inline void SetAutoAttackHeld(bool value) { Get().isAutoAttackHeld = value; }
+
     inline bool EnsureChosenBowInInventory() {
         auto const& st = Get();
 
@@ -348,6 +387,7 @@ namespace BowState {
         st.isUsingBow = false;
         st.isEquipingBow = false;
         st.wasCombatPosed = false;
+        st.isAutoAttackHeld = false;
     }
 
 }
