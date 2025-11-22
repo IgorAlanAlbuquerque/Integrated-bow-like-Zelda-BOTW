@@ -10,19 +10,28 @@
 #include "PCH.h"
 
 namespace {
-    bool g_holdMode = true;                 // NOSONAR
-    std::uint32_t g_bowKeyScanCode = 0x2F;  // NOSONAR
-    int g_bowGamepadButton = -1;            // NOSONAR
-    std::atomic_bool bowDrawed = false;     // NOSONAR
-    std::atomic_uint64_t g_exitToken{0};    // NOSONAR
+    bool g_holdMode = true;  // NOSONAR
+
+    int g_bowKeyScanCodes[3] = {0x2F, -1, -1};     // NOSONAR
+    bool g_bowKeyDown[3] = {false, false, false};  // NOSONAR
+
+    int g_bowPadButtons[3] = {-1, -1, -1};         // NOSONAR
+    bool g_bowPadDown[3] = {false, false, false};  // NOSONAR
+
+    bool g_kbdComboDown = false;  // NOSONAR
+    bool g_padComboDown = false;  // NOSONAR
+    bool g_hotkeyDown = false;    // NOSONAR
+
+    std::atomic_bool bowDrawed = false;   // NOSONAR
+    std::atomic_uint64_t g_exitToken{0};  // NOSONAR
 
     inline bool IsAutoDrawEnabled() {
-        auto& cfg = IntegratedBow::GetBowConfig();
+        auto const& cfg = IntegratedBow::GetBowConfig();
         return cfg.autoDrawEnabled.load(std::memory_order_relaxed);
     }
 
     inline float GetSheathedDelayMs() {
-        auto& cfg = IntegratedBow::GetBowConfig();
+        auto const& cfg = IntegratedBow::GetBowConfig();
         float secs = cfg.sheathedDelaySeconds.load(std::memory_order_relaxed);
         if (secs < 0.0f) {
             secs = 0.0f;
@@ -69,8 +78,7 @@ namespace {
             }
 
             task->AddTask([]() {
-                auto& st = BowState::Get();
-                if (!st.isUsingBow || BowState::IsAutoAttackHeld()) {
+                if (auto const& st = BowState::Get(); !st.isUsingBow || BowState::IsAutoAttackHeld()) {
                     return;
                 }
 
@@ -78,6 +86,32 @@ namespace {
                 StartAutoAttackDraw();
             });
         }).detach();
+    }
+
+    inline bool AreAllActiveKeysDown() {
+        bool hasActive = false;
+        for (int i = 0; i < 3; ++i) {
+            if (g_bowKeyScanCodes[i] >= 0) {
+                hasActive = true;
+                if (!g_bowKeyDown[i]) {
+                    return false;
+                }
+            }
+        }
+        return hasActive;
+    }
+
+    inline bool AreAllActivePadButtonsDown() {
+        bool hasActive = false;
+        for (int i = 0; i < 3; ++i) {
+            if (g_bowPadButtons[i] >= 0) {
+                hasActive = true;
+                if (!g_bowPadDown[i]) {
+                    return false;
+                }
+            }
+        }
+        return hasActive;
     }
 
     class IntegratedBowInputHandler : public RE::BSTEventSink<RE::InputEvent*> {
@@ -104,14 +138,11 @@ namespace {
                         continue;
                     }
 
-                    if (!IsOurKey(button)) {
-                        continue;
-                    }
-
-                    if (button->IsDown()) {
-                        OnKeyPressed(player);
-                    } else if (button->IsUp()) {
-                        OnKeyReleased(player);
+                    auto dev = button->GetDevice();
+                    if (dev == RE::INPUT_DEVICE::kKeyboard) {
+                        HandleKeyboardButton(button, player);
+                    } else if (dev == RE::INPUT_DEVICE::kGamepad) {
+                        HandleGamepadButton(button, player);
                     }
                 }
             }
@@ -120,21 +151,73 @@ namespace {
         }
 
     private:
-        bool IsOurKey(const RE::ButtonEvent* a_event) const {
-            auto dev = a_event->GetDevice();
+        void UpdateHotkeyState(RE::PlayerCharacter* player, bool newKbdCombo, bool newPadCombo) const {
+            g_kbdComboDown = newKbdCombo;
+            g_padComboDown = newPadCombo;
 
-            if (dev == RE::INPUT_DEVICE::kKeyboard) {
-                auto code = a_event->idCode;
-                return code == g_bowKeyScanCode;
+            const bool anyNow = g_kbdComboDown || g_padComboDown;
+
+            if (anyNow && !g_hotkeyDown) {
+                g_hotkeyDown = true;
+                OnKeyPressed(player);
+            } else if (!anyNow && g_hotkeyDown) {
+                g_hotkeyDown = false;
+                OnKeyReleased(player);
+            }
+        }
+
+        void HandleKeyboardButton(const RE::ButtonEvent* a_event, RE::PlayerCharacter* player) const {
+            const auto code = static_cast<int>(a_event->idCode);
+
+            int idx = -1;
+            for (int i = 0; i < 3; ++i) {
+                if (g_bowKeyScanCodes[i] >= 0 && code == g_bowKeyScanCodes[i]) {
+                    idx = i;
+                    break;
+                }
+            }
+            if (idx < 0) {
+                return;
             }
 
-            if (dev == RE::INPUT_DEVICE::kGamepad) {
-                if (g_bowGamepadButton < 0) return false;
-                auto code = static_cast<int>(a_event->idCode);
-                return code == g_bowGamepadButton;
+            if (a_event->IsDown()) {
+                g_bowKeyDown[idx] = true;
+            } else if (a_event->IsUp()) {
+                g_bowKeyDown[idx] = false;
+            } else {
+                return;
             }
 
-            return false;
+            const bool comboK = AreAllActiveKeysDown();
+
+            UpdateHotkeyState(player, comboK, g_padComboDown);
+        }
+
+        void HandleGamepadButton(const RE::ButtonEvent* a_event, RE::PlayerCharacter* player) const {
+            const auto code = static_cast<int>(a_event->idCode);
+
+            int idx = -1;
+            for (int i = 0; i < 3; ++i) {
+                if (g_bowPadButtons[i] >= 0 && code == g_bowPadButtons[i]) {
+                    idx = i;
+                    break;
+                }
+            }
+            if (idx < 0) {
+                return;
+            }
+
+            if (a_event->IsDown()) {
+                g_bowPadDown[idx] = true;
+            } else if (a_event->IsUp()) {
+                g_bowPadDown[idx] = false;
+            } else {
+                return;
+            }
+
+            const bool comboP = AreAllActivePadButtonsDown();
+
+            UpdateHotkeyState(player, g_kbdComboDown, comboP);
         }
 
         void OnKeyPressed(RE::PlayerCharacter* player) const {
@@ -460,6 +543,21 @@ namespace BowInput {
 
     void SetHoldMode(bool hold) { g_holdMode = hold; }
 
-    void SetKeyScanCode(std::uint32_t scanCode) { g_bowKeyScanCode = scanCode; }
-    void SetGamepadButton(int button) { g_bowGamepadButton = button; }
+    void SetKeyScanCodes(int k1, int k2, int k3) {
+        g_bowKeyScanCodes[0] = k1;
+        g_bowKeyScanCodes[1] = k2;
+        g_bowKeyScanCodes[2] = k3;
+        g_bowKeyDown[0] = g_bowKeyDown[1] = g_bowKeyDown[2] = false;
+        g_kbdComboDown = false;
+        g_hotkeyDown = false;
+    }
+
+    void SetGamepadButtons(int b1, int b2, int b3) {
+        g_bowPadButtons[0] = b1;
+        g_bowPadButtons[1] = b2;
+        g_bowPadButtons[2] = b3;
+        g_bowPadDown[0] = g_bowPadDown[1] = g_bowPadDown[2] = false;
+        g_padComboDown = false;
+        g_hotkeyDown = false;
+    }
 }

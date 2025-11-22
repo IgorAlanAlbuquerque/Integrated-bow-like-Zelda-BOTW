@@ -10,8 +10,15 @@ namespace IntegratedBow {
 
     struct BowConfig {
         std::atomic<BowMode> mode{BowMode::Hold};
-        std::atomic<std::uint32_t> keyboardScanCode{0x2F};
-        std::atomic<int> gamepadButton{-1};
+
+        std::atomic<int> keyboardScanCode1{0x2F};
+        std::atomic<int> keyboardScanCode2{-1};
+        std::atomic<int> keyboardScanCode3{-1};
+
+        std::atomic<int> gamepadButton1{-1};
+        std::atomic<int> gamepadButton2{-1};
+        std::atomic<int> gamepadButton3{-1};
+
         std::atomic<std::uint32_t> chosenBowFormID{0};
         std::atomic<bool> autoDrawEnabled{true};
         std::atomic<float> sheathedDelaySeconds{1.0f};
