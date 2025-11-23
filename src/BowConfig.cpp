@@ -78,19 +78,41 @@ namespace IntegratedBow {
         const int bow = _getInt(ini, "Bow", "ChosenBowFormID", 0);
         chosenBowFormID.store(static_cast<std::uint32_t>(bow), std::memory_order_relaxed);
 
-        const int autoDrawInt = _getInt(ini, "Input", "AutoDrawEnabled", 1);
-        autoDrawEnabled.store(autoDrawInt != 0, std::memory_order_relaxed);
+        {
+            bool autoDraw = true;
 
-        const char* delayStr = ini.GetValue("Input", "SheathedDelaySeconds", nullptr);
-        float delay = sheathedDelaySeconds.load(std::memory_order_relaxed);
-        if (delayStr) {
-            char* end = nullptr;
-            const float v = std::strtof(delayStr, &end);
-            if (end && *end == '\0' && v >= 0.0f) {
-                delay = v;
+            if (const char* v = ini.GetValue("Input", "AutoDrawEnabled", nullptr); !v) {
+                v = ini.GetValue("Bow", "AutoDrawEnabled", nullptr);
+                if (!v) {
+                    autoDrawEnabled.store(autoDraw, std::memory_order_relaxed);
+                } else {
+                    autoDraw = (std::strcmp(v, "true") == 0 || std::strcmp(v, "1") == 0);
+                    autoDrawEnabled.store(autoDraw, std::memory_order_relaxed);
+                }
+            } else {
+                autoDraw = (std::strcmp(v, "true") == 0 || std::strcmp(v, "1") == 0);
+                autoDrawEnabled.store(autoDraw, std::memory_order_relaxed);
             }
         }
-        sheathedDelaySeconds.store(delay, std::memory_order_relaxed);
+
+        {
+            float delay = sheathedDelaySeconds.load(std::memory_order_relaxed);
+
+            const char* delayStr = ini.GetValue("Input", "SheathedDelaySeconds", nullptr);
+            if (!delayStr) {
+                delayStr = ini.GetValue("Bow", "SheathedDelaySeconds", nullptr);
+            }
+
+            if (delayStr) {
+                char* end = nullptr;
+                const float v = std::strtof(delayStr, &end);
+                if (end && *end == '\0' && v >= 0.0f) {
+                    delay = v;
+                }
+            }
+
+            sheathedDelaySeconds.store(delay, std::memory_order_relaxed);
+        }
     }
 
     void BowConfig::Save() const {
@@ -120,8 +142,9 @@ namespace IntegratedBow {
         ini.SetLongValue("Input", "GamepadButton3", static_cast<long>(gp3));
 
         ini.SetLongValue("Bow", "ChosenBowFormID", static_cast<long>(chosenBowFormID.load(std::memory_order_relaxed)));
-        ini.SetBoolValue("Bow", "AutoDrawEnabled", autoDrawEnabled.load(std::memory_order_relaxed));
-        ini.SetDoubleValue("Bow", "SheathedDelaySeconds",
+
+        ini.SetBoolValue("Input", "AutoDrawEnabled", autoDrawEnabled.load(std::memory_order_relaxed));
+        ini.SetDoubleValue("Input", "SheathedDelaySeconds",
                            static_cast<double>(sheathedDelaySeconds.load(std::memory_order_relaxed)));
 
         std::error_code ec;

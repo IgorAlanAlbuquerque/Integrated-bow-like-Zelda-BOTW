@@ -187,7 +187,7 @@ void __stdcall IntegratedBow_UI::DrawConfig() {
 void IntegratedBow_UI::Register() {
     if (!SKSEMenuFramework::IsInstalled()) return;
 
-    SKSEMenuFramework::SetSection(IntegratedBow::Strings::Get("SectionName", "Integrated Bow").c_str());
-    SKSEMenuFramework::AddSectionItem(IntegratedBow::Strings::Get("SectionItemName", "Input").c_str(),
+    SKSEMenuFramework::SetSection(IntegratedBow::Strings::Get("SectionName", "Integrated Bow"));
+    SKSEMenuFramework::AddSectionItem(IntegratedBow::Strings::Get("SectionItemName", "Input"),
                                       IntegratedBow_UI::DrawConfig);
 }
