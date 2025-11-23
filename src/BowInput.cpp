@@ -25,6 +25,46 @@ namespace {
     std::atomic_bool bowDrawed = false;   // NOSONAR
     std::atomic_uint64_t g_exitToken{0};  // NOSONAR
 
+    inline bool IsInputBlockedByMenus() {
+        auto* ui = RE::UI::GetSingleton();
+        if (!ui) {
+            return false;
+        }
+
+        if (ui->GameIsPaused()) {
+            return true;
+        }
+
+        static const RE::BSFixedString inventoryMenu{"InventoryMenu"};
+        static const RE::BSFixedString magicMenu{"MagicMenu"};
+        static const RE::BSFixedString statsMenu{"StatsMenu"};
+        static const RE::BSFixedString mapMenu{"MapMenu"};
+        static const RE::BSFixedString journalMenu{"Journal Menu"};
+        static const RE::BSFixedString favoritesMenu{"FavoritesMenu"};
+        static const RE::BSFixedString containerMenu{"ContainerMenu"};
+        static const RE::BSFixedString barterMenu{"BarterMenu"};
+        static const RE::BSFixedString trainingMenu{"Training Menu"};
+        static const RE::BSFixedString craftingMenu{"Crafting Menu"};
+        static const RE::BSFixedString giftMenu{"GiftMenu"};
+        static const RE::BSFixedString lockpickingMenu{"Lockpicking Menu"};
+        static const RE::BSFixedString sleepWaitMenu{"Sleep/Wait Menu"};
+        static const RE::BSFixedString loadingMenu{"Loading Menu"};
+        static const RE::BSFixedString mainMenu{"Main Menu"};
+        static const RE::BSFixedString console{"Console"};
+
+        if (static const RE::BSFixedString mcm{"Mod Configuration Menu"};
+            ui->IsMenuOpen(inventoryMenu) || ui->IsMenuOpen(magicMenu) || ui->IsMenuOpen(statsMenu) ||
+            ui->IsMenuOpen(mapMenu) || ui->IsMenuOpen(journalMenu) || ui->IsMenuOpen(favoritesMenu) ||
+            ui->IsMenuOpen(containerMenu) || ui->IsMenuOpen(barterMenu) || ui->IsMenuOpen(trainingMenu) ||
+            ui->IsMenuOpen(craftingMenu) || ui->IsMenuOpen(giftMenu) || ui->IsMenuOpen(lockpickingMenu) ||
+            ui->IsMenuOpen(sleepWaitMenu) || ui->IsMenuOpen(loadingMenu) || ui->IsMenuOpen(mainMenu) ||
+            ui->IsMenuOpen(console) || ui->IsMenuOpen(mcm)) {
+            return true;
+        }
+
+        return false;
+    }
+
     inline bool IsAutoDrawEnabled() {
         auto const& cfg = IntegratedBow::GetBowConfig();
         return cfg.autoDrawEnabled.load(std::memory_order_relaxed);
@@ -429,6 +469,18 @@ RE::BSEventNotifyControl BowInput::IntegratedBowInputHandler::ProcessEvent(RE::I
         return RE::BSEventNotifyControl::kContinue;
     }
 
+    if (IsInputBlockedByMenus()) {
+        for (int i = 0; i < BowInput::kMaxComboKeys; ++i) {
+            g_bowKeyDown[i] = false;
+            g_bowPadDown[i] = false;
+        }
+        g_kbdComboDown = false;
+        g_padComboDown = false;
+        g_hotkeyDown = false;
+
+        return RE::BSEventNotifyControl::kContinue;
+    }
+
     for (auto e = *a_events; e; e = e->next) {
         if (auto button = e->AsButtonEvent()) {
             if (!button->IsDown() && !button->IsUp()) {
@@ -469,6 +521,10 @@ void BowInput::IntegratedBowInputHandler::ScheduleAutoAttackDraw() {
 
         task->AddTask([]() {
             if (auto const& st = BowState::Get(); !st.isUsingBow || BowState::IsAutoAttackHeld()) {
+                return;
+            }
+
+            if (!g_hotkeyDown) {
                 return;
             }
 
