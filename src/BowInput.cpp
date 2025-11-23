@@ -12,11 +12,11 @@
 namespace {
     bool g_holdMode = true;  // NOSONAR
 
-    int g_bowKeyScanCodes[3] = {0x2F, -1, -1};     // NOSONAR
-    bool g_bowKeyDown[3] = {false, false, false};  // NOSONAR
+    int g_bowKeyScanCodes[BowInput::kMaxComboKeys] = {0x2F, -1, -1};     // NOSONAR
+    bool g_bowKeyDown[BowInput::kMaxComboKeys] = {false, false, false};  // NOSONAR
 
-    int g_bowPadButtons[3] = {-1, -1, -1};         // NOSONAR
-    bool g_bowPadDown[3] = {false, false, false};  // NOSONAR
+    int g_bowPadButtons[BowInput::kMaxComboKeys] = {-1, -1, -1};         // NOSONAR
+    bool g_bowPadDown[BowInput::kMaxComboKeys] = {false, false, false};  // NOSONAR
 
     bool g_kbdComboDown = false;  // NOSONAR
     bool g_padComboDown = false;  // NOSONAR
@@ -44,8 +44,6 @@ namespace {
 
         auto* ev = MakeAttackButtonEvent(1.0f, 0.0f);
         DispatchAttackButtonEvent(ev);
-
-        spdlog::info("[IntegratedBow] AutoAttack: DOWN");
     }
 
     void StopAutoAttackDraw() {
@@ -53,13 +51,11 @@ namespace {
 
         auto* ev = MakeAttackButtonEvent(0.0f, 0.1f);
         DispatchAttackButtonEvent(ev);
-
-        spdlog::info("[IntegratedBow] AutoAttack: UP");
     }
 
     inline bool AreAllActiveKeysDown() {
         bool hasActive = false;
-        for (int i = 0; i < 3; ++i) {
+        for (int i = 0; i < BowInput::kMaxComboKeys; ++i) {
             if (g_bowKeyScanCodes[i] >= 0) {
                 hasActive = true;
                 if (!g_bowKeyDown[i]) {
@@ -72,7 +68,7 @@ namespace {
 
     inline bool AreAllActivePadButtonsDown() {
         bool hasActive = false;
-        for (int i = 0; i < 3; ++i) {
+        for (int i = 0; i < BowInput::kMaxComboKeys; ++i) {
             if (g_bowPadButtons[i] >= 0) {
                 hasActive = true;
                 if (!g_bowPadDown[i]) {
@@ -105,7 +101,7 @@ void BowInput::IntegratedBowInputHandler::HandleKeyboardButton(const RE::ButtonE
     const auto code = static_cast<int>(a_event->idCode);
 
     int idx = -1;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < kMaxComboKeys; ++i) {
         if (g_bowKeyScanCodes[i] >= 0 && code == g_bowKeyScanCodes[i]) {
             idx = i;
             break;
@@ -133,7 +129,7 @@ void BowInput::IntegratedBowInputHandler::HandleGamepadButton(const RE::ButtonEv
     const auto code = static_cast<int>(a_event->idCode);
 
     int idx = -1;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < kMaxComboKeys; ++i) {
         if (g_bowPadButtons[i] >= 0 && code == g_bowPadButtons[i]) {
             idx = i;
             break;
@@ -496,19 +492,25 @@ void BowInput::RegisterInputHandler() {
 void BowInput::SetHoldMode(bool hold) { g_holdMode = hold; }
 
 void BowInput::SetKeyScanCodes(int k1, int k2, int k3) {
-    g_bowKeyScanCodes[0] = k1;
-    g_bowKeyScanCodes[1] = k2;
-    g_bowKeyScanCodes[2] = k3;
-    g_bowKeyDown[0] = g_bowKeyDown[1] = g_bowKeyDown[2] = false;
+    int vals[kMaxComboKeys] = {k1, k2, k3};
+
+    for (int i = 0; i < kMaxComboKeys; ++i) {
+        g_bowKeyScanCodes[i] = vals[i];
+        g_bowKeyDown[i] = false;
+    }
+
     g_kbdComboDown = false;
     g_hotkeyDown = false;
 }
 
 void BowInput::SetGamepadButtons(int b1, int b2, int b3) {
-    g_bowPadButtons[0] = b1;
-    g_bowPadButtons[1] = b2;
-    g_bowPadButtons[2] = b3;
-    g_bowPadDown[0] = g_bowPadDown[1] = g_bowPadDown[2] = false;
+    int vals[kMaxComboKeys] = {b1, b2, b3};
+
+    for (int i = 0; i < kMaxComboKeys; ++i) {
+        g_bowPadButtons[i] = vals[i];
+        g_bowPadDown[i] = false;
+    }
+
     g_padComboDown = false;
     g_hotkeyDown = false;
 }

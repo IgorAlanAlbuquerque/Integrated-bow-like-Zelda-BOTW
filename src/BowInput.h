@@ -1,6 +1,7 @@
 #pragma once
 
 namespace BowInput {
+    inline constexpr int kMaxComboKeys = 3;
     void RegisterInputHandler();
 
     void SetHoldMode(bool hold);
