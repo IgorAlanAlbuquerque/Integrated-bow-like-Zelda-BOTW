@@ -17,7 +17,7 @@ namespace BowState {
 
                 bool match = true;
                 for (std::size_t i = 0; i < q.size(); ++i) {
-                    const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(inside[i])));
+                    const auto c = static_cast<char>(std::tolower(static_cast<unsigned char>(inside[i])));
                     if (c != q[i]) {
                         match = false;
                         break;
@@ -65,8 +65,7 @@ namespace BowState {
                     break;
                 }
 
-                std::string_view inside(name.data() + open + 1, name.size() - open - 2);
-                if (!IsTemperingTag(inside)) {
+                if (std::string_view inside(name.data() + open + 1, name.size() - open - 2); !IsTemperingTag(inside)) {
                     break;
                 }
 

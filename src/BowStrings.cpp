@@ -9,8 +9,8 @@
 
 namespace IntegratedBow::Strings {
     namespace {
-        std::unordered_map<std::string, std::string> g_strings;
-        bool g_loaded = false;
+        std::unordered_map<std::string, std::string> g_strings;  // NOSONAR: lista de strings carregadas
+        bool g_loaded = false;                                   // NOSONAR: estado global
 
         std::filesystem::path StringsPath() { return GetThisDllDir() / "IntegratedBow_Strings.txt"; }
 
@@ -28,8 +28,8 @@ namespace IntegratedBow::Strings {
 
             std::string line;
             while (std::getline(in, line)) {
-                auto posComment = line.find('#');
-                if (posComment != std::string::npos) line = line.substr(0, posComment);
+                if (auto posComment = line.find('#'); posComment != std::string::npos)
+                    line = line.substr(0, posComment);
 
                 auto trim = [](std::string& s) {
                     while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
@@ -62,8 +62,7 @@ namespace IntegratedBow::Strings {
 
     std::string Get(std::string_view key, std::string_view fallback) {
         _ensureLoaded();
-        auto it = g_strings.find(std::string{key});
-        if (it != g_strings.end()) return it->second;
+        if (auto it = g_strings.find(std::string{key}); it != g_strings.end()) return it->second;
         return std::string{fallback};
     }
 }
