@@ -1,41 +1,42 @@
 #include "UI_IntegratedBow.h"
 
+#include <array>
+
 #include "BowConfig.h"
 #include "BowInput.h"
 #include "BowStrings.h"
 #include "PCH.h"
 #include "SKSEMenuFramework.h"
 
-#define IM_ARRAYSIZE(_ARR) ((int)(sizeof(_ARR) / sizeof(*_ARR)))
 using IntegratedBow::BowMode;
 using IntegratedBow::GetBowConfig;
 
-void __stdcall IntegratedBow_UI::DrawConfig() {
-    auto& cfg = GetBowConfig();
+namespace {
+    bool g_pending = false;  // NOSONAR: estado global
+    using enum IntegratedBow::BowMode;
 
-    const auto& title = IntegratedBow::Strings::Get("MenuTitle", "Integrated Bow");
-    ImGui::TextUnformatted(title.c_str());
-    ImGui::Separator();
-
-    static bool pending = false;
-    bool dirty = false;
-
-    BowMode mode = cfg.mode.load(std::memory_order_relaxed);
-    int modeIndex = (mode == BowMode::Press) ? 1 : 0;
-
-    const auto& lblMode = IntegratedBow::Strings::Get("Item_InputMode", "Bow mode");
-    const auto& lblHold = IntegratedBow::Strings::Get("Item_InputMode_Hold", "Hold");
-    const auto& lblPress = IntegratedBow::Strings::Get("Item_InputMode_Press", "Press");
-
-    const char* items[] = {lblHold.c_str(), lblPress.c_str()};
-
-    ImGui::SetNextItemWidth(220.0f);
-    if (ImGui::Combo(lblMode.c_str(), &modeIndex, items, IM_ARRAYSIZE(items))) {
-        cfg.mode.store(modeIndex == 1 ? BowMode::Press : BowMode::Hold, std::memory_order_relaxed);
-        dirty = true;
+    IntegratedBow::BowMode GetModeFromConfig(IntegratedBow::BowConfig& cfg) {
+        return cfg.mode.load(std::memory_order_relaxed);
     }
 
-    {
+    void DrawModeSection(IntegratedBow::BowConfig& cfg, bool& dirty) {
+        BowMode mode = GetModeFromConfig(cfg);
+        int modeIndex = (mode == Press) ? 1 : 0;
+
+        const auto& lblMode = IntegratedBow::Strings::Get("Item_InputMode", "Bow mode");
+        const auto& lblHold = IntegratedBow::Strings::Get("Item_InputMode_Hold", "Hold");
+        const auto& lblPress = IntegratedBow::Strings::Get("Item_InputMode_Press", "Press");
+
+        const std::array<const char*, 2> items = {lblHold.c_str(), lblPress.c_str()};
+
+        ImGui::SetNextItemWidth(220.0f);
+        if (ImGui::Combo(lblMode.c_str(), &modeIndex, items.data(), static_cast<int>(items.size()))) {
+            cfg.mode.store(modeIndex == 1 ? Press : Hold, std::memory_order_relaxed);
+            dirty = true;
+        }
+    }
+
+    void DrawKeyboardHotkeysSection(IntegratedBow::BowConfig& cfg, bool& dirty) {
         int key1 = cfg.keyboardScanCode1.load(std::memory_order_relaxed);
         int key2 = cfg.keyboardScanCode2.load(std::memory_order_relaxed);
         int key3 = cfg.keyboardScanCode3.load(std::memory_order_relaxed);
@@ -45,7 +46,6 @@ void __stdcall IntegratedBow_UI::DrawConfig() {
                                                            "All non -1 keys must be held together at the same time.");
 
         ImGui::TextUnformatted(groupLabelK.c_str());
-
         ImGui::PushID("KeyboardHotkeys");
 
         ImGui::SetNextItemWidth(150.0f);
@@ -76,7 +76,7 @@ void __stdcall IntegratedBow_UI::DrawConfig() {
         ImGui::TextDisabled("%s", tipTextK.c_str());
     }
 
-    {
+    void DrawGamepadHotkeysSection(IntegratedBow::BowConfig& cfg, bool& dirty) {
         int gp1 = cfg.gamepadButton1.load(std::memory_order_relaxed);
         int gp2 = cfg.gamepadButton2.load(std::memory_order_relaxed);
         int gp3 = cfg.gamepadButton3.load(std::memory_order_relaxed);
@@ -86,7 +86,6 @@ void __stdcall IntegratedBow_UI::DrawConfig() {
             "Item_GamepadComboTip", "All non -1 buttons must be held together at the same time.");
 
         ImGui::TextUnformatted(groupLabelP.c_str());
-
         ImGui::PushID("GamepadHotkeys");
 
         ImGui::SetNextItemWidth(150.0f);
@@ -117,20 +116,22 @@ void __stdcall IntegratedBow_UI::DrawConfig() {
         ImGui::TextDisabled("%s", tipTextP.c_str());
     }
 
-    if (dirty) pending = true;
+    void DrawPendingAndApplySection(IntegratedBow::BowConfig& cfg) {
+        if (g_pending) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", IntegratedBow::Strings::Get("Item_Pending", "(pending)").c_str());
+        }
 
-    if (pending) {
-        ImGui::SameLine();
-        ImGui::TextDisabled("%s", IntegratedBow::Strings::Get("Item_Pending", "(pending)").c_str());
-    }
+        ImGui::Spacing();
+        ImGui::BeginDisabled(!g_pending);
+        bool pressed =
+            ImGui::Button(IntegratedBow::Strings::Get("Item_Apply", "Apply changes").c_str(), ImVec2{140.0f, 0.0f});
+        ImGui::EndDisabled();
 
-    ImGui::Spacing();
-    ImGui::BeginDisabled(!pending);
-    bool pressed =
-        ImGui::Button(IntegratedBow::Strings::Get("Item_Apply", "Apply changes").c_str(), ImVec2{140.0f, 0.0f});
-    ImGui::EndDisabled();
+        if (!pressed) {
+            return;
+        }
 
-    if (pressed) {
         cfg.Save();
 
         const bool hold = (cfg.mode.load(std::memory_order_relaxed) == BowMode::Hold);
@@ -144,50 +145,76 @@ void __stdcall IntegratedBow_UI::DrawConfig() {
                                     cfg.gamepadButton2.load(std::memory_order_relaxed),
                                     cfg.gamepadButton3.load(std::memory_order_relaxed));
 
-        pending = false;
+        g_pending = false;
 
         ImGui::SameLine();
         ImGui::TextDisabled("✓");
     }
 
-    ImGui::Separator();
+    void DrawAutoDrawAndDelaySection(IntegratedBow::BowConfig& cfg) {
+        if (bool autoDraw = cfg.autoDrawEnabled.load(std::memory_order_relaxed); ImGui::Checkbox(
+                IntegratedBow::Strings::Get("Item_AutoDrawEnabled", "Auto draw arrow").c_str(), &autoDraw)) {
+            cfg.autoDrawEnabled.store(autoDraw, std::memory_order_relaxed);
+        }
 
-    if (bool autoDraw = cfg.autoDrawEnabled.load(std::memory_order_relaxed);
-        ImGui::Checkbox(IntegratedBow::Strings::Get("Item_AutoDrawEnabled", "Auto draw arrow").c_str(), &autoDraw)) {
-        cfg.autoDrawEnabled.store(autoDraw, std::memory_order_relaxed);
+        ImGui::SameLine();
+        ImGui::TextDisabled(
+            "%s", IntegratedBow::Strings::Get(
+                      "Item_AutoDrawEnabled_Tip",
+                      "If enabled, the bow will automatically start drawing an arrow while holding the hotkey.")
+                      .c_str());
+
+        float delaySec = cfg.sheathedDelaySeconds.load(std::memory_order_relaxed);
+        ImGui::SetNextItemWidth(150.0f);
+
+        if (ImGui::InputFloat(IntegratedBow::Strings::Get("Item_sheathedDelay", "S delay (s)").c_str(), &delaySec, 0.1f,
+                              1.0f, "%.2f")) {
+            if (delaySec < 0.0f) delaySec = 0.0f;
+            cfg.sheathedDelaySeconds.store(delaySec, std::memory_order_relaxed);
+        }
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s",
+                            IntegratedBow::Strings::Get(
+                                "Item_sheathedDelay_Tip",
+                                "Time in seconds after releasing the key (in hold mode) for the weapon to be sheathed.")
+                                .c_str());
     }
 
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s",
-                        IntegratedBow::Strings::Get(
-                            "Item_AutoDrawEnabled_Tip",
-                            "If enabled, the bow will automatically start drawing an arrow while holding the hotkey.")
-                            .c_str());
+    void DrawFinalTip() {
+        ImGui::Separator();
+        ImGui::TextDisabled("%s", IntegratedBow::Strings::Get("Item_Tip", "Tip: -1 disables gamepad binding.").c_str());
+    }
+}
 
-    float delaySec = cfg.sheathedDelaySeconds.load(std::memory_order_relaxed);
-    ImGui::SetNextItemWidth(150.0f);
+void __stdcall IntegratedBow_UI::DrawConfig() {
+    auto& cfg = GetBowConfig();
 
-    if (ImGui::InputFloat(IntegratedBow::Strings::Get("Item_sheathedDelay", "S delay (s)").c_str(), &delaySec, 0.1f,
-                          1.0f, "%.2f")) {
-        if (delaySec < 0.0f) delaySec = 0.0f;
-        cfg.sheathedDelaySeconds.store(delaySec, std::memory_order_relaxed);
+    const auto& title = IntegratedBow::Strings::Get("MenuTitle", "Integrated Bow");
+    ImGui::TextUnformatted(title.c_str());
+    ImGui::Separator();
+
+    bool dirty = false;
+
+    DrawModeSection(cfg, dirty);
+    DrawKeyboardHotkeysSection(cfg, dirty);
+    DrawGamepadHotkeysSection(cfg, dirty);
+
+    if (dirty) {
+        g_pending = true;
     }
 
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s",
-                        IntegratedBow::Strings::Get(
-                            "Item_sheathedDelay_Tip",
-                            "Time in seconds after releasing the key (in hold mode) for the weapon to be sheathed.")
-                            .c_str());
+    DrawPendingAndApplySection(cfg);
 
     ImGui::Separator();
-    ImGui::TextDisabled("%s", IntegratedBow::Strings::Get("Item_Tip", "Tip: -1 disables gamepad binding.").c_str());
+    DrawAutoDrawAndDelaySection(cfg);
+    DrawFinalTip();
 }
 
 void IntegratedBow_UI::Register() {
     if (!SKSEMenuFramework::IsInstalled()) return;
 
-    SKSEMenuFramework::SetSection(IntegratedBow::Strings::Get("SectionName", "Integrated Bow").c_str());
-    SKSEMenuFramework::AddSectionItem(IntegratedBow::Strings::Get("SectionItemName", "Input").c_str(),
+    SKSEMenuFramework::SetSection(IntegratedBow::Strings::Get("SectionName", "Integrated Bow"));
+    SKSEMenuFramework::AddSectionItem(IntegratedBow::Strings::Get("SectionItemName", "Input"),
                                       IntegratedBow_UI::DrawConfig);
 }

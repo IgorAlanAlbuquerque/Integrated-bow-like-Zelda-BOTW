@@ -10,26 +10,52 @@ namespace BowState {
         static constexpr std::string_view kQualityTags[] = {"fine",     "superior", "exquisite",
                                                             "flawless", "epic",     "legendary"};
         inline bool IsTemperingTag(std::string_view inside) {
-            std::string lower;
-            lower.reserve(inside.size());
-            for (char c : inside) {
-                lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-            }
-
             for (auto q : kQualityTags) {
-                if (lower == q) {
+                if (inside.size() != q.size()) {
+                    continue;
+                }
+
+                bool match = true;
+                for (std::size_t i = 0; i < q.size(); ++i) {
+                    const auto c = static_cast<char>(std::tolower(static_cast<unsigned char>(inside[i])));
+                    if (c != q[i]) {
+                        match = false;
+                        break;
+                    }
+                }
+
+                if (match) {
                     return true;
                 }
             }
+
             return false;
         }
 
-        inline void StripTemperingSuffixes(std::string& name) {
-            for (;;) {
-                while (!name.empty() && name.back() == ' ') {
-                    name.pop_back();
-                }
+        inline void TrimTrailingSpaces(std::string& s) {
+            while (!s.empty() && s.back() == ' ') {
+                s.pop_back();
+            }
+        }
 
+        inline void RemoveChosenTagInplace(std::string& s) {
+            constexpr std::string_view chosenTag{" (chosen)"};
+
+            for (;;) {
+                auto pos = s.find(chosenTag);
+                if (pos == std::string::npos) {
+                    break;
+                }
+                s.erase(pos, chosenTag.size());
+            }
+
+            TrimTrailingSpaces(s);
+        }
+
+        inline void StripTemperingSuffixes(std::string& name) {
+            TrimTrailingSpaces(name);
+
+            for (;;) {
                 if (name.size() < 3 || name.back() != ')') {
                     break;
                 }
@@ -44,12 +70,12 @@ namespace BowState {
                 }
 
                 name.erase(open - 1);
+                TrimTrailingSpaces(name);
             }
 
-            while (!name.empty() && name.back() == ' ') {
-                name.pop_back();
-            }
+            TrimTrailingSpaces(name);
         }
+
         inline void ApplyChosenTagToInstance(RE::TESBoundObject* base, RE::ExtraDataList* extra) {
             if (!base || !extra) {
                 return;
@@ -76,18 +102,12 @@ namespace BowState {
             constexpr std::string_view chosenTag{" (chosen)"};
             std::string curName{cstr};
 
-            for (;;) {
-                auto pos = curName.find(chosenTag);
-                if (pos == std::string::npos) {
-                    break;
-                }
-                curName.erase(pos, chosenTag.size());
-            }
+            RemoveChosenTagInplace(curName);
 
             StripTemperingSuffixes(curName);
 
             if (!curName.empty()) {
-                curName += " (chosen)";
+                curName += chosenTag;
             } else {
                 curName = "(chosen)";
             }
@@ -121,18 +141,8 @@ namespace BowState {
             }
 
             std::string curName = cstr;
-            constexpr std::string_view tag{" (chosen)"};
 
-            auto pos = curName.rfind(tag);
-            if (pos == std::string::npos) {
-                return;
-            }
-
-            curName.erase(pos, tag.size());
-
-            while (!curName.empty() && curName.back() == ' ') {
-                curName.pop_back();
-            }
+            RemoveChosenTagInplace(curName);
 
             StripTemperingSuffixes(curName);
 
@@ -194,7 +204,7 @@ namespace BowState {
     };
 
     inline IntegratedBowState& Get() {
-        static IntegratedBowState s;
+        static IntegratedBowState s;  // NOSONAR: Instância única
         return s;
     }
 

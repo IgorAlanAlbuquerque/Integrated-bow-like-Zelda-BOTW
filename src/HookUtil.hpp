@@ -85,8 +85,7 @@ namespace Hook::stl {
         DetourTransactionBegin();
         DetourUpdateThread(GetCurrentThread());
 
-        LONG attachResult = DetourAttach(&reinterpret_cast<PVOID&>(T::func), T::thunk);
-        if (attachResult != NO_ERROR) {
+        if (LONG attachResult = DetourAttach(&reinterpret_cast<PVOID&>(T::func), T::thunk); attachResult != NO_ERROR) {
             DetourTransactionAbort();
             SKSE::stl::report_and_fail(fmt::format("Detour Attach Failed [{} + 0x{:X}] - Error: {}", a_relId.id(),
                                                    a_relId.offset(), attachResult));
@@ -108,13 +107,12 @@ namespace Hook::stl {
                 fmt::format("Invalid target address for detour replace [{} + 0x{:X}]", a_relId.id(), a_relId.offset()));
         }
 
-        PVOID targetFunc = reinterpret_cast<PVOID>(target.address());
+        auto targetFunc = reinterpret_cast<PVOID>(target.address());
 
         DetourTransactionBegin();
         DetourUpdateThread(GetCurrentThread());
 
-        LONG attachResult = DetourAttach(&targetFunc, T::thunk);
-        if (attachResult != NO_ERROR) {
+        if (LONG attachResult = DetourAttach(&targetFunc, T::thunk); attachResult != NO_ERROR) {
             DetourTransactionAbort();
             SKSE::stl::report_and_fail(fmt::format("Detour Replace Attach Failed [{} + 0x{:X}] - Error: {}",
                                                    a_relId.id(), a_relId.offset(), attachResult));
@@ -144,8 +142,8 @@ namespace Hook::stl {
         DetourTransactionBegin();
         DetourUpdateThread(GetCurrentThread());
 
-        LONG attachResult = DetourAttach(&reinterpret_cast<PVOID&>(vtable[idx]), T::thunk);
-        if (attachResult != NO_ERROR) {
+        if (LONG attachResult = DetourAttach(&reinterpret_cast<PVOID&>(vtable[idx]), T::thunk);
+            attachResult != NO_ERROR) {
             DetourTransactionAbort();
             SKSE::stl::report_and_fail(
                 fmt::format("Detour vFunc Attach Failed at index {} - Error: {}", idx, attachResult));

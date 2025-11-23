@@ -32,6 +32,26 @@ namespace {
             spdlog::info("Logger iniciado.");
         }
     }
+
+    void GlobalMessageHandler(SKSE::MessagingInterface::Message* message) {
+        if (!message) return;
+        if (message->type == SKSE::MessagingInterface::kDataLoaded) {
+            Hooks::Install_Hooks();
+            IntegratedBow_UI::Register();
+        }
+        if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
+            auto const& cfg = IntegratedBow::GetBowConfig();
+            const auto bowID = cfg.chosenBowFormID.load(std::memory_order_relaxed);
+            if (bowID != 0) {
+                auto* bow = RE::TESForm::LookupByID<RE::TESObjectWEAP>(bowID);
+                if (bow) {
+                    BowState::LoadChosenBow(bow);
+                } else {
+                    spdlog::warn("IntegratedBow: saved bow FormID 0x{:08X} not found, ignoring", bowID);
+                }
+            }
+        }
+    }
 }
 
 extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* skse) {
@@ -54,26 +74,9 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
 
     SKSE::AllocTrampoline(1 << 14);
 
-    auto* messaging = SKSE::GetMessagingInterface();
-    messaging->RegisterListener([](SKSE::MessagingInterface::Message* message) {
-        if (!message) return;
-        if (message->type == SKSE::MessagingInterface::kDataLoaded) {
-            Hooks::Install_Hooks();
-            IntegratedBow_UI::Register();
-        }
-        if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
-            auto const& cfg = IntegratedBow::GetBowConfig();
-            const auto bowID = cfg.chosenBowFormID.load(std::memory_order_relaxed);
-            if (bowID != 0) {
-                auto* bow = RE::TESForm::LookupByID<RE::TESObjectWEAP>(bowID);
-                if (bow) {
-                    BowState::LoadChosenBow(bow);
-                } else {
-                    spdlog::warn("IntegratedBow: saved bow FormID 0x{:08X} not found, ignoring", bowID);
-                }
-            }
-        }
-    });
+    if (const auto mi = SKSE::GetMessagingInterface()) {
+        mi->RegisterListener(GlobalMessageHandler);
+    }
 
     return true;
 }
