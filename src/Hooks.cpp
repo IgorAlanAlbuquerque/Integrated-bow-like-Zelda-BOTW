@@ -14,10 +14,10 @@ namespace {
 
         static inline Fn* func{nullptr};
 
-        static void thunk(RE::ActorEquipManager* a_mgr, RE::Actor* a_actor, RE::TESBoundObject* a_object,
-                          RE::ExtraDataList* a_extraData, std::uint32_t a_count, const RE::BGSEquipSlot* a_slot,
-                          bool a_queueEquip, bool a_forceEquip, bool a_playSounds,
-                          bool a_applyNow) {  // NOSONAR: Definição do original
+        static void thunk(RE::ActorEquipManager* a_mgr, RE::Actor* a_actor,  // NOSONAR: Definição do original
+                          RE::TESBoundObject* a_object, RE::ExtraDataList* a_extraData, std::uint32_t a_count,
+                          const RE::BGSEquipSlot* a_slot, bool a_queueEquip, bool a_forceEquip, bool a_playSounds,
+                          bool a_applyNow) {
             if (auto const* player = RE::PlayerCharacter::GetSingleton(); player && a_actor == player) {
                 if (auto weap = a_object ? a_object->As<RE::TESObjectWEAP>() : nullptr) {
                     if (weap->IsBow() && !BowState::IsEquipingBow() && !BowState::IsUsingBow()) {

@@ -14,6 +14,7 @@ using IntegratedBow::GetBowConfig;
 namespace {
     bool g_pending = false;  // NOSONAR: estado global
     using enum IntegratedBow::BowMode;
+    bool g_capturingHotkey = false;  // NOSONAR
 
     IntegratedBow::BowMode GetModeFromConfig(IntegratedBow::BowConfig& cfg) {
         return cfg.mode.load(std::memory_order_relaxed);
@@ -51,7 +52,6 @@ namespace {
         ImGui::SetNextItemWidth(150.0f);
         if (ImGui::InputInt(IntegratedBow::Strings::Get("Item_KeyboardKey1", "Key 1").c_str(), &key1)) {
             if (key1 < -1) key1 = -1;
-            if (key1 > 255) key1 = 255;
             cfg.keyboardScanCode1.store(key1, std::memory_order_relaxed);
             dirty = true;
         }
@@ -59,7 +59,6 @@ namespace {
         ImGui::SetNextItemWidth(150.0f);
         if (ImGui::InputInt(IntegratedBow::Strings::Get("Item_KeyboardKey2", "Key 2").c_str(), &key2)) {
             if (key2 < -1) key2 = -1;
-            if (key2 > 255) key2 = 255;
             cfg.keyboardScanCode2.store(key2, std::memory_order_relaxed);
             dirty = true;
         }
@@ -67,7 +66,6 @@ namespace {
         ImGui::SetNextItemWidth(150.0f);
         if (ImGui::InputInt(IntegratedBow::Strings::Get("Item_KeyboardKey3", "Key 3").c_str(), &key3)) {
             if (key3 < -1) key3 = -1;
-            if (key3 > 255) key3 = 255;
             cfg.keyboardScanCode3.store(key3, std::memory_order_relaxed);
             dirty = true;
         }
@@ -91,7 +89,6 @@ namespace {
         ImGui::SetNextItemWidth(150.0f);
         if (ImGui::InputInt(IntegratedBow::Strings::Get("Item_GamepadButton1", "Btn 1").c_str(), &gp1)) {
             if (gp1 < -1) gp1 = -1;
-            if (gp1 > 31) gp1 = 31;
             cfg.gamepadButton1.store(gp1, std::memory_order_relaxed);
             dirty = true;
         }
@@ -99,7 +96,6 @@ namespace {
         ImGui::SetNextItemWidth(150.0f);
         if (ImGui::InputInt(IntegratedBow::Strings::Get("Item_GamepadButton2", "Btn 2").c_str(), &gp2)) {
             if (gp2 < -1) gp2 = -1;
-            if (gp2 > 31) gp2 = 31;
             cfg.gamepadButton2.store(gp2, std::memory_order_relaxed);
             dirty = true;
         }
@@ -107,9 +103,43 @@ namespace {
         ImGui::SetNextItemWidth(150.0f);
         if (ImGui::InputInt(IntegratedBow::Strings::Get("Item_GamepadButton3", "Btn 3").c_str(), &gp3)) {
             if (gp3 < -1) gp3 = -1;
-            if (gp3 > 31) gp3 = 31;
             cfg.gamepadButton3.store(gp3, std::memory_order_relaxed);
             dirty = true;
+        }
+
+        ImGui::Spacing();
+        if (!g_capturingHotkey) {
+            if (ImGui::Button(
+                    IntegratedBow::Strings::Get("Item_CaptureHotkey", "Capture next key/button after press esc")
+                        .c_str())) {
+                BowInput::RequestGamepadCapture();
+                g_capturingHotkey = true;
+            }
+        } else {
+            ImGui::TextDisabled("%s", IntegratedBow::Strings::Get(
+                                          "Item_CaptureHotkey_Waiting",
+                                          "Press ESC to close the menu then press a keyboard key or gamepad button...")
+                                          .c_str());
+
+            int encoded = BowInput::PollCapturedGamepadButton();
+            if (encoded != -1) {
+                if (encoded >= 0) {
+                    int code = encoded;
+                    cfg.keyboardScanCode1.store(code, std::memory_order_relaxed);
+                    cfg.keyboardScanCode2.store(-1, std::memory_order_relaxed);
+                    cfg.keyboardScanCode3.store(-1, std::memory_order_relaxed);
+                    BowInput::SetKeyScanCodes(code, -1, -1);
+                } else {
+                    int code = -(encoded + 1);
+                    cfg.gamepadButton1.store(code, std::memory_order_relaxed);
+                    cfg.gamepadButton2.store(-1, std::memory_order_relaxed);
+                    cfg.gamepadButton3.store(-1, std::memory_order_relaxed);
+                    BowInput::SetGamepadButtons(code, -1, -1);
+                }
+
+                dirty = true;
+                g_capturingHotkey = false;
+            }
         }
 
         ImGui::PopID();

@@ -25,6 +25,9 @@ namespace {
     std::atomic_bool bowDrawed = false;   // NOSONAR
     std::atomic_uint64_t g_exitToken{0};  // NOSONAR
 
+    std::atomic_bool g_captureRequested{false};  // NOSONAR
+    std::atomic_int g_capturedEncoded{-1};
+
     inline bool IsInputBlockedByMenus() {
         auto* ui = RE::UI::GetSingleton();
         if (!ui) {
@@ -140,6 +143,15 @@ void BowInput::IntegratedBowInputHandler::HandleKeyboardButton(const RE::ButtonE
                                                                RE::PlayerCharacter* player) const {
     const auto code = static_cast<int>(a_event->idCode);
 
+    if (g_captureRequested.load(std::memory_order_relaxed)) {
+        if (a_event->IsDown()) {
+            int encoded = code;
+            g_capturedEncoded.store(encoded, std::memory_order_relaxed);
+            g_captureRequested.store(false, std::memory_order_relaxed);
+        }
+        return;
+    }
+
     int idx = -1;
     for (int i = 0; i < kMaxComboKeys; ++i) {
         if (g_bowKeyScanCodes[i] >= 0 && code == g_bowKeyScanCodes[i]) {
@@ -167,6 +179,15 @@ void BowInput::IntegratedBowInputHandler::HandleKeyboardButton(const RE::ButtonE
 void BowInput::IntegratedBowInputHandler::HandleGamepadButton(const RE::ButtonEvent* a_event,
                                                               RE::PlayerCharacter* player) const {
     const auto code = static_cast<int>(a_event->idCode);
+
+    if (g_captureRequested.load(std::memory_order_relaxed)) {
+        if (a_event->IsDown()) {
+            int encoded = -(code + 1);
+            g_capturedEncoded.store(encoded, std::memory_order_relaxed);
+            g_captureRequested.store(false, std::memory_order_relaxed);
+        }
+        return;
+    }
 
     int idx = -1;
     for (int i = 0; i < kMaxComboKeys; ++i) {
@@ -469,7 +490,8 @@ RE::BSEventNotifyControl BowInput::IntegratedBowInputHandler::ProcessEvent(RE::I
         return RE::BSEventNotifyControl::kContinue;
     }
 
-    if (IsInputBlockedByMenus()) {
+    const bool capturing = g_captureRequested.load(std::memory_order_relaxed);
+    if (!capturing && IsInputBlockedByMenus()) {
         for (int i = 0; i < BowInput::kMaxComboKeys; ++i) {
             g_bowKeyDown[i] = false;
             g_bowPadDown[i] = false;
@@ -483,7 +505,7 @@ RE::BSEventNotifyControl BowInput::IntegratedBowInputHandler::ProcessEvent(RE::I
 
     for (auto e = *a_events; e; e = e->next) {
         if (auto button = e->AsButtonEvent()) {
-            if (!button->IsDown() && !button->IsUp()) {
+            if (!capturing && !button->IsDown() && !button->IsUp()) {
                 continue;
             }
 
@@ -569,4 +591,17 @@ void BowInput::SetGamepadButtons(int b1, int b2, int b3) {
 
     g_padComboDown = false;
     g_hotkeyDown = false;
+}
+
+void BowInput::RequestGamepadCapture() {
+    g_captureRequested.store(true, std::memory_order_relaxed);
+    g_capturedEncoded.store(-1, std::memory_order_relaxed);
+}
+
+int BowInput::PollCapturedGamepadButton() {
+    if (int v = g_capturedEncoded.load(std::memory_order_relaxed); v != -1) {
+        g_capturedEncoded.store(-1, std::memory_order_relaxed);
+        return v;
+    }
+    return -1;
 }
