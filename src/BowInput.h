@@ -9,6 +9,7 @@ namespace BowInput {
     void SetGamepadButtons(int b1, int b2, int b3);
     void RequestGamepadCapture();
     int PollCapturedGamepadButton();
+    bool IsHotkeyDown();
 
     class IntegratedBowInputHandler : public RE::BSTEventSink<RE::InputEvent*> {
     public:

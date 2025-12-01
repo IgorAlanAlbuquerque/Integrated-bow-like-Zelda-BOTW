@@ -130,12 +130,20 @@ void BowInput::IntegratedBowInputHandler::UpdateHotkeyState(RE::PlayerCharacter*
 
     const bool anyNow = g_kbdComboDown || g_padComboDown;
 
+    const bool blocked = IsInputBlockedByMenus();
+
     if (anyNow && !g_hotkeyDown) {
         g_hotkeyDown = true;
-        OnKeyPressed(player);
+
+        if (!blocked) {
+            OnKeyPressed(player);
+        }
     } else if (!anyNow && g_hotkeyDown) {
         g_hotkeyDown = false;
-        OnKeyReleased();
+
+        if (!blocked) {
+            OnKeyReleased();
+        }
     }
 }
 
@@ -490,22 +498,9 @@ RE::BSEventNotifyControl BowInput::IntegratedBowInputHandler::ProcessEvent(RE::I
         return RE::BSEventNotifyControl::kContinue;
     }
 
-    const bool capturing = g_captureRequested.load(std::memory_order_relaxed);
-    if (!capturing && IsInputBlockedByMenus()) {
-        for (int i = 0; i < BowInput::kMaxComboKeys; ++i) {
-            g_bowKeyDown[i] = false;
-            g_bowPadDown[i] = false;
-        }
-        g_kbdComboDown = false;
-        g_padComboDown = false;
-        g_hotkeyDown = false;
-
-        return RE::BSEventNotifyControl::kContinue;
-    }
-
     for (auto e = *a_events; e; e = e->next) {
         if (auto button = e->AsButtonEvent()) {
-            if (!capturing && !button->IsDown() && !button->IsUp()) {
+            if (!button->IsDown() && !button->IsUp()) {
                 continue;
             }
 
@@ -605,3 +600,5 @@ int BowInput::PollCapturedGamepadButton() {
     }
     return -1;
 }
+
+bool BowInput::IsHotkeyDown() { return g_hotkeyDown; }

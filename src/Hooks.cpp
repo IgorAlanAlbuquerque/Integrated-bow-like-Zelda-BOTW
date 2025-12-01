@@ -21,8 +21,10 @@ namespace {
             if (auto const* player = RE::PlayerCharacter::GetSingleton(); player && a_actor == player) {
                 if (auto weap = a_object ? a_object->As<RE::TESObjectWEAP>() : nullptr) {
                     if (weap->IsBow() && !BowState::IsEquipingBow() && !BowState::IsUsingBow()) {
-                        BowState::SetChosenBow(weap, a_extraData);
-                        return;
+                        if (BowInput::IsHotkeyDown()) {
+                            BowState::SetChosenBow(weap, a_extraData);
+                            return;
+                        }
                     }
 
                     if (BowState::IsUsingBow() && !weap->IsBow()) {
