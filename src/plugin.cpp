@@ -40,6 +40,7 @@ namespace {
             IntegratedBow_UI::Register();
         }
         if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
+            BowInput::RegisterAnimEventSink();
             auto const& cfg = IntegratedBow::GetBowConfig();
             const auto bowID = cfg.chosenBowFormID.load(std::memory_order_relaxed);
             if (bowID != 0) {

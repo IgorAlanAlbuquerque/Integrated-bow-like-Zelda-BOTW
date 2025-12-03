@@ -6,6 +6,7 @@
 #include "BowState.h"
 #include "HookUtil.hpp"
 #include "PCH.h"
+#include "RE/I/InputEvent.h"
 
 namespace {
     struct EquipObjectHook {
@@ -14,17 +15,16 @@ namespace {
 
         static inline Fn* func{nullptr};
 
-        static void thunk(RE::ActorEquipManager* a_mgr, RE::Actor* a_actor,  // NOSONAR: Definição do original
-                          RE::TESBoundObject* a_object, RE::ExtraDataList* a_extraData, std::uint32_t a_count,
-                          const RE::BGSEquipSlot* a_slot, bool a_queueEquip, bool a_forceEquip, bool a_playSounds,
-                          bool a_applyNow) {
+        static void thunk(  // NOSONAR
+            RE::ActorEquipManager* a_mgr, RE::Actor* a_actor, RE::TESBoundObject* a_object,
+            RE::ExtraDataList* a_extraData, std::uint32_t a_count, const RE::BGSEquipSlot* a_slot, bool a_queueEquip,
+            bool a_forceEquip, bool a_playSounds, bool a_applyNow) {
             if (auto const* player = RE::PlayerCharacter::GetSingleton(); player && a_actor == player) {
                 if (auto weap = a_object ? a_object->As<RE::TESObjectWEAP>() : nullptr) {
-                    if (weap->IsBow() && !BowState::IsEquipingBow() && !BowState::IsUsingBow()) {
-                        if (BowInput::IsHotkeyDown()) {
-                            BowState::SetChosenBow(weap, a_extraData);
-                            return;
-                        }
+                    if (weap->IsBow() && !BowState::IsEquipingBow() && !BowState::IsUsingBow() &&
+                        BowInput::IsHotkeyDown()) {
+                        BowState::SetChosenBow(weap, a_extraData);
+                        return;
                     }
 
                     if (BowState::IsUsingBow() && !weap->IsBow()) {
@@ -49,13 +49,39 @@ namespace {
             Hook::stl::write_detour<EquipObjectHook>(RE::Offset::ActorEquipManager::EquipObject);
         }
     };
+
+    struct PollInputDevicesHook {
+        using Fn = void(RE::BSTEventSource<RE::InputEvent*>*, RE::InputEvent* const*);
+
+        static inline std::uintptr_t func{0};
+
+        static void thunk(RE::BSTEventSource<RE::InputEvent*>* a_dispatcher, RE::InputEvent* const* a_events) {
+            using namespace BowState::detail;
+
+            RE::InputEvent* head = a_events ? *a_events : nullptr;
+
+            head = FlushSyntheticInput(head);
+
+            RE::InputEvent* const arr[2]{head, nullptr};  // NOSONAR - definição padrão
+
+            if (func != 0) {
+                auto* original = reinterpret_cast<Fn*>(func);  // NOSONAR - interop
+                original(a_dispatcher, arr);
+            }
+        }
+
+        static void Install() {
+            Hook::stl::write_call<PollInputDevicesHook>(REL::RelocationID(67315, 68617),
+                                                        REL::VariantOffset(0x7B, 0x7B, 0x81));
+        }
+    };
 }
 
 namespace Hooks {
     void Install_Hooks() {
         SKSE::AllocTrampoline(64);
-
         EquipObjectHook::Install();
+        PollInputDevicesHook::Install();
         BowInput::RegisterInputHandler();
     }
 }
