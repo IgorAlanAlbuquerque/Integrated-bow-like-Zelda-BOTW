@@ -1,14 +1,23 @@
 #pragma once
+#include <mutex>
+#include <queue>
+
 #include "BowConfig.h"
 #include "PCH.h"
 #include "RE/E/ExtraTextDisplayData.h"
 #include "RE/P/PlayerCharacter.h"
 #include "RE/T/TESObjectREFR.h"
 
+namespace RE {
+    class InputEvent;
+    template <class Event>
+    class BSTEventSource;
+}
+
 namespace BowState {
     namespace detail {
-        static constexpr std::string_view kQualityTags[] = {"fine",     "superior", "exquisite",
-                                                            "flawless", "epic",     "legendary"};
+        static constexpr std::array<std::string_view, 6> kQualityTags{"fine",     "superior", "exquisite",
+                                                                      "flawless", "epic",     "legendary"};
         inline bool IsTemperingTag(std::string_view inside) {
             for (auto q : kQualityTags) {
                 if (inside.size() != q.size()) {
@@ -56,16 +65,28 @@ namespace BowState {
             TrimTrailingSpaces(name);
 
             for (;;) {
+                bool canStrip = true;
+                std::size_t open = std::string::npos;
+
                 if (name.size() < 3 || name.back() != ')') {
-                    break;
+                    canStrip = false;
                 }
 
-                auto open = name.rfind('(');
-                if (open == std::string::npos || open == 0 || name[open - 1] != ' ') {
-                    break;
+                if (canStrip) {
+                    open = name.rfind('(');
+                    if (open == std::string::npos || open == 0 || name[open - 1] != ' ') {
+                        canStrip = false;
+                    }
                 }
 
-                if (std::string_view inside(name.data() + open + 1, name.size() - open - 2); !IsTemperingTag(inside)) {
+                if (canStrip) {
+                    const std::string_view inside(name.data() + open + 1, name.size() - open - 2);
+                    if (!IsTemperingTag(inside)) {
+                        canStrip = false;
+                    }
+                }
+
+                if (!canStrip) {
                     break;
                 }
 
@@ -113,7 +134,7 @@ namespace BowState {
             }
 
             if (!tdd) {
-                tdd = new RE::ExtraTextDisplayData(base, 1.0f);
+                tdd = new RE::ExtraTextDisplayData(base, 1.0f);  // NOSONAR Lifetime é gerenciado pelo engine.
                 if (!tdd) {
                     spdlog::warn("[IntegratedBow] failed to create ExtraTextDisplayData for chosen bow");
                     return;
@@ -165,27 +186,70 @@ namespace BowState {
                                            heldSecs);
         }
 
-        inline void DispatchAttackButtonEvent(RE::ButtonEvent* ev) {
+        struct SyntheticInputState {
+            std::mutex mutex;
+            std::queue<RE::ButtonEvent*> pending;
+        };
+
+        inline SyntheticInputState& GetSyntheticInputState() {
+            static SyntheticInputState s;  // NOSONAR
+            return s;
+        }
+
+        inline void EnqueueSyntheticAttack(RE::ButtonEvent* ev) {
             if (!ev) {
                 return;
             }
 
-            auto* pc = RE::PlayerControls::GetSingleton();
-            if (!pc) {
-                return;
-            }
+            auto& st = GetSyntheticInputState();
+            std::scoped_lock lk(st.mutex);
 
-            auto* handler = pc->attackBlockHandler;
-            if (!handler) {
-                return;
-            }
-
-            if (!handler->CanProcess(ev)) {
-                return;
-            }
-
-            handler->ProcessButton(ev, &pc->data);
+            st.pending.push(ev);
         }
+
+        inline RE::InputEvent* FlushSyntheticInput(RE::InputEvent* head) {
+            auto& st = GetSyntheticInputState();
+
+            std::queue<RE::ButtonEvent*> local;
+            {
+                std::scoped_lock lk(st.mutex);
+                local.swap(st.pending);
+            }
+
+            if (local.empty()) {
+                return head;
+            }
+
+            RE::InputEvent* synthHead = nullptr;
+            RE::InputEvent* synthTail = nullptr;
+
+            while (!local.empty()) {
+                auto* ev = local.front();
+                local.pop();
+                if (!ev) {
+                    continue;
+                }
+
+                ev->next = nullptr;
+
+                if (!synthHead) {
+                    synthHead = ev;
+                    synthTail = ev;
+                } else {
+                    synthTail->next = ev;
+                    synthTail = ev;
+                }
+            }
+
+            if (!head) {
+                return synthHead;
+            }
+
+            synthTail->next = head;
+            return synthHead;
+        }
+
+        inline void DispatchAttackButtonEvent(RE::ButtonEvent* ev) { EnqueueSyntheticAttack(ev); }
     }
 
     struct ChosenInstance {
@@ -201,10 +265,12 @@ namespace BowState {
         bool isEquipingBow{false};
         bool wasCombatPosed{false};
         bool isAutoAttackHeld{false};
+        std::atomic_bool waitingAutoAttackAfterEquip{false};
+        std::atomic_bool bowEquipped{false};
     };
 
     inline IntegratedBowState& Get() {
-        static IntegratedBowState s;  // NOSONAR: Instância única
+        static IntegratedBowState s;  // NOSONAR
         return s;
     }
 
@@ -256,7 +322,7 @@ namespace BowState {
             return;
         }
 
-        auto inventory = player->GetInventory([&](RE::TESBoundObject& obj) { return &obj == base; });
+        auto inventory = player->GetInventory([base](RE::TESBoundObject& obj) { return &obj == base; });
 
         constexpr const char* kChosenTag = " (chosen)";
         constexpr std::size_t kTagLen = 9;
@@ -329,7 +395,9 @@ namespace BowState {
             return false;
         }
 
-        auto inventory = player->GetInventory([&](RE::TESBoundObject& obj) { return &obj == st.chosenBow.base; });
+        auto const* const chosenBase = st.chosenBow.base;
+
+        auto inventory = player->GetInventory([chosenBase](RE::TESBoundObject& obj) { return &obj == chosenBase; });
 
         for (auto const& [obj, data] : inventory) {
             if (obj != st.chosenBow.base) {
@@ -398,6 +466,28 @@ namespace BowState {
         st.isEquipingBow = false;
         st.wasCombatPosed = false;
         st.isAutoAttackHeld = false;
+
+        st.waitingAutoAttackAfterEquip.store(false, std::memory_order_relaxed);
+        st.bowEquipped.store(false, std::memory_order_relaxed);
     }
 
+    inline void SetBowEquipped(bool v) {
+        auto& st = Get();
+        st.bowEquipped.store(v, std::memory_order_relaxed);
+    }
+
+    inline bool IsBowEquipped() {
+        auto const& st = Get();
+        return st.bowEquipped.load(std::memory_order_relaxed);
+    }
+
+    inline void SetWaitingAutoAfterEquip(bool v) {
+        auto& st = Get();
+        st.waitingAutoAttackAfterEquip.store(v, std::memory_order_relaxed);
+    }
+
+    inline bool IsWaitingAutoAfterEquip() {
+        auto const& st = Get();
+        return st.waitingAutoAttackAfterEquip.load(std::memory_order_relaxed);
+    }
 }
