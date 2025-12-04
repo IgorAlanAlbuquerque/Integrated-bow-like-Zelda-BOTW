@@ -12,6 +12,7 @@
 #include "Hooks.h"
 #include "PCH.h"
 #include "UI_IntegratedBow.h"
+#include "patchs/UnMapBlock.h"
 
 #ifndef DLLEXPORT
     #include "REL/Relocation.h"
@@ -62,6 +63,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
     auto& cfg = IntegratedBow::GetBowConfig();
     cfg.Load();
     IntegratedBow::Strings::Load();
+    UnMapBlock::SetNoLeftBlockPatch(cfg.noLeftBlockPatch);
 
     BowInput::SetMode(std::to_underlying(cfg.mode.load(std::memory_order_relaxed)));
     BowInput::SetKeyScanCodes(cfg.keyboardScanCode1.load(std::memory_order_relaxed),

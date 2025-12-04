@@ -115,6 +115,8 @@ namespace IntegratedBow {
 
             sheathedDelaySeconds.store(delay, std::memory_order_relaxed);
         }
+
+        noLeftBlockPatch = _getBool(ini, "Patches", "NoLeftBlockPatch", false);
     }
 
     void BowConfig::Save() const {
@@ -163,6 +165,11 @@ namespace IntegratedBow {
                            static_cast<double>(sheathedDelaySeconds.load(std::memory_order_relaxed)));
 
         std::error_code ec;
+        std::filesystem::create_directories(path.parent_path(), ec);
+        ini.SaveFile(path.string().c_str());
+
+        ini.SetBoolValue("Patches", "NoLeftBlockPatch", noLeftBlockPatch);
+
         std::filesystem::create_directories(path.parent_path(), ec);
         ini.SaveFile(path.string().c_str());
     }
