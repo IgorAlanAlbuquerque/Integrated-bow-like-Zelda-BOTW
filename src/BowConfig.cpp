@@ -56,6 +56,8 @@ namespace IntegratedBow {
         BowMode newMode = BowMode::Hold;
         if (_stricmp(modeStr.c_str(), "Press") == 0) {
             newMode = BowMode::Press;
+        } else if (_stricmp(modeStr.c_str(), "Smart") == 0) {
+            newMode = BowMode::Smart;
         }
         mode.store(newMode, std::memory_order_relaxed);
 
@@ -116,13 +118,26 @@ namespace IntegratedBow {
     }
 
     void BowConfig::Save() const {
+        using enum BowMode;
         CSimpleIniA ini;
         ini.SetUnicode();
         const auto path = IniPath();
         ini.LoadFile(path.string().c_str());
 
         const auto m = mode.load(std::memory_order_relaxed);
-        const char* modeStr = (m == BowMode::Press) ? "Press" : "Hold";
+        const char* modeStr = nullptr;
+        switch (m) {
+            case Press:
+                modeStr = "Press";
+                break;
+            case Smart:
+                modeStr = "Smart";
+                break;
+            case Hold:
+            default:
+                modeStr = "Hold";
+                break;
+        }
 
         ini.SetValue("Input", "Mode", modeStr);
         const int k1 = keyboardScanCode1.load(std::memory_order_relaxed);

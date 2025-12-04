@@ -6,6 +6,7 @@ namespace IntegratedBow {
     enum class BowMode : std::uint32_t {
         Hold = 0,
         Press = 1,
+        Smart = 2,
     };
 
     struct BowConfig {

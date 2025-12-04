@@ -3,28 +3,57 @@
 
 namespace BowInput {
     inline constexpr int kMaxComboKeys = 3;
+    struct HotkeyConfig {
+        std::array<int, BowInput::kMaxComboKeys> bowKeyScanCodes{0x2F, -1, -1};
+        std::array<int, BowInput::kMaxComboKeys> bowPadButtons{-1, -1, -1};
+    };
+    struct HotkeyState {
+        std::array<bool, BowInput::kMaxComboKeys> bowKeyDown{false, false, false};
+        std::array<bool, BowInput::kMaxComboKeys> bowPadDown{false, false, false};
+        bool kbdComboDown = false;
+        bool padComboDown = false;
+        bool hotkeyDown = false;
+    };
+    struct CaptureState {
+        std::atomic_bool captureRequested{false};
+        std::atomic_int capturedEncoded{-1};
+    };
+    struct AttackHoldState {
+        std::atomic_bool active{false};
+        std::atomic<float> secs{0.0f};
+    };
+    struct ModeState {
+        bool holdMode = true;
+        bool smartMode = false;
+        bool smartPending = false;
+        float smartTimer = 0.0f;
+    };
+    struct ExitState {
+        bool pending = false;
+        bool waitForEquip = false;
+        float waitEquipTimer = 0.0f;
+        float delayTimer = 0.0f;
+        float waitEquipMax = 3.0f;
+        int delayMs = 0;
+        std::atomic_uint64_t token{0};
+        std::uint64_t tokenSnapshot = 0;
+    };
+
     struct GlobalState {
-        bool g_holdMode = true;
-        std::array<int, BowInput::kMaxComboKeys> g_bowKeyScanCodes = {0x2F, -1, -1};
-        std::array<bool, BowInput::kMaxComboKeys> g_bowKeyDown = {false, false, false};
-        std::array<int, BowInput::kMaxComboKeys> g_bowPadButtons = {-1, -1, -1};
-        std::array<bool, BowInput::kMaxComboKeys> g_bowPadDown = {false, false, false};
-        bool g_kbdComboDown = false;
-        bool g_padComboDown = false;
-        bool g_hotkeyDown = false;
-        std::atomic_uint64_t g_exitToken{0};
-        std::atomic_bool g_captureRequested{false};
-        std::atomic_int g_capturedEncoded{-1};
-        std::atomic_bool g_attackHoldActive{false};
-        std::atomic<float> g_attackHoldSecs{0.0f};
-        std::atomic_bool g_pendingRestoreAfterSheathe{false};
+        HotkeyConfig hotkeyConfig;
+        HotkeyState hotkey;
+        CaptureState capture;
+        AttackHoldState attackHold;
+        ModeState mode;
+        ExitState exit;
+        std::atomic_bool pendingRestoreAfterSheathe{false};
     };
 
     GlobalState& Globals() noexcept;
     void RegisterInputHandler();
     void RegisterAnimEventSink();
 
-    void SetHoldMode(bool hold);
+    void SetMode(int mode);
     void SetKeyScanCodes(int k1, int k2, int k3);
     void SetGamepadButtons(int b1, int b2, int b3);
     void RequestGamepadCapture();
@@ -52,6 +81,17 @@ namespace BowInput {
                                  BowState::IntegratedBowState& st);
         static void ExitBowMode(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
                                 BowState::IntegratedBowState& st);
+        void HandleNormalMode(RE::PlayerCharacter* player, bool anyNow, bool blocked) const;
+        void HandleSmartModePressed(bool blocked) const;
+        void HandleSmartModeReleased(RE::PlayerCharacter* player, bool blocked) const;
+        void UpdateSmartMode(RE::PlayerCharacter* player, float dt) const;
+        void UpdateExitEquipWait(float dt) const;
+        bool IsExitDelayReady(float dt) const;
+        void CompleteExit() const;
+        void UpdateExitPending(float dt) const;
+        void ProcessButtonEvent(const RE::ButtonEvent* button, RE::PlayerCharacter* player) const;
+        void ProcessInputEvents(RE::InputEvent* const* a_events, RE::PlayerCharacter* player) const;
+        float CalculateDeltaTime() const;
     };
 
     class BowAnimEventSink : public RE::BSTEventSink<RE::BSAnimationGraphEvent> {

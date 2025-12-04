@@ -1,6 +1,7 @@
 
 #include "BowInput.h"
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <string_view>
@@ -13,6 +14,8 @@
 using namespace std::literals;
 
 namespace {
+    constexpr float kSmartClickThreshold = 0.18f;
+
     inline bool IsInputBlockedByMenus() {
         auto* ui = RE::UI::GetSingleton();
         if (!ui) {
@@ -70,8 +73,8 @@ namespace {
     void StartAutoAttackDraw() {
         auto& ist = BowInput::Globals();
         using namespace BowState::detail;
-        ist.g_attackHoldActive.store(true, std::memory_order_relaxed);
-        ist.g_attackHoldSecs.store(0.0f, std::memory_order_relaxed);
+        ist.attackHold.active.store(true, std::memory_order_relaxed);
+        ist.attackHold.secs.store(0.0f, std::memory_order_relaxed);
 
         auto* ev = MakeAttackButtonEvent(1.0f, 0.0f);
         DispatchAttackButtonEvent(ev);
@@ -81,7 +84,7 @@ namespace {
         auto& ist = BowInput::Globals();
         using namespace BowState::detail;
 
-        float held = ist.g_attackHoldSecs.load(std::memory_order_relaxed);
+        float held = ist.attackHold.secs.load(std::memory_order_relaxed);
         if (held <= 0.0f) {
             held = 0.1f;
         }
@@ -89,17 +92,17 @@ namespace {
         auto* ev = MakeAttackButtonEvent(0.0f, held);
         DispatchAttackButtonEvent(ev);
 
-        ist.g_attackHoldActive.store(false, std::memory_order_relaxed);
-        ist.g_attackHoldSecs.store(0.0f, std::memory_order_relaxed);
+        ist.attackHold.active.store(false, std::memory_order_relaxed);
+        ist.attackHold.secs.store(0.0f, std::memory_order_relaxed);
     }
 
     inline bool AreAllActiveKeysDown() {
         auto const& ist = BowInput::Globals();
         bool hasActive = false;
         for (int i = 0; i < BowInput::kMaxComboKeys; ++i) {
-            if (ist.g_bowKeyScanCodes[i] >= 0) {
+            if (ist.hotkeyConfig.bowKeyScanCodes[i] >= 0) {
                 hasActive = true;
-                if (!ist.g_bowKeyDown[i]) {
+                if (!ist.hotkey.bowKeyDown[i]) {
                     return false;
                 }
             }
@@ -111,9 +114,9 @@ namespace {
         auto const& ist = BowInput::Globals();
         bool hasActive = false;
         for (int i = 0; i < BowInput::kMaxComboKeys; ++i) {
-            if (ist.g_bowPadButtons[i] >= 0) {
+            if (ist.hotkeyConfig.bowPadButtons[i] >= 0) {
                 hasActive = true;
-                if (!ist.g_bowPadDown[i]) {
+                if (!ist.hotkey.bowPadDown[i]) {
                     return false;
                 }
             }
@@ -123,19 +126,19 @@ namespace {
 
     void PumpAttackHold(float dt) {
         auto& ist = BowInput::Globals();
-        if (!ist.g_attackHoldActive.load(std::memory_order_relaxed)) {
+        if (!ist.attackHold.active.load(std::memory_order_relaxed)) {
             return;
         }
 
         if (!BowState::IsAutoAttackHeld()) {
-            ist.g_attackHoldActive.store(false, std::memory_order_relaxed);
-            ist.g_attackHoldSecs.store(0.0f, std::memory_order_relaxed);
+            ist.attackHold.active.store(false, std::memory_order_relaxed);
+            ist.attackHold.secs.store(0.0f, std::memory_order_relaxed);
             return;
         }
 
-        float cur = ist.g_attackHoldSecs.load(std::memory_order_relaxed);
+        float cur = ist.attackHold.secs.load(std::memory_order_relaxed);
         cur += dt;
-        ist.g_attackHoldSecs.store(cur, std::memory_order_relaxed);
+        ist.attackHold.secs.store(cur, std::memory_order_relaxed);
 
         using namespace BowState::detail;
 
@@ -148,8 +151,8 @@ namespace {
         auto* player = RE::PlayerCharacter::GetSingleton();
         BowState::SetBowEquipped(false);
 
-        if (ist.g_pendingRestoreAfterSheathe.load(std::memory_order_relaxed)) {
-            ist.g_pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
+        if (ist.pendingRestoreAfterSheathe.load(std::memory_order_relaxed)) {
+            ist.pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
 
             auto* equipMgr = RE::ActorEquipManager::GetSingleton();
             if (player && equipMgr) {
@@ -183,28 +186,75 @@ BowInput::GlobalState& BowInput::Globals() noexcept {
     return s;
 }
 
-void BowInput::IntegratedBowInputHandler::UpdateHotkeyState(RE::PlayerCharacter* player, bool newKbdCombo,
-                                                            bool newPadCombo) const {
+void BowInput::IntegratedBowInputHandler::HandleNormalMode(RE::PlayerCharacter* player, bool anyNow,
+                                                           bool blocked) const {
     auto& st = BowInput::Globals();
-    st.g_kbdComboDown = newKbdCombo;
-    st.g_padComboDown = newPadCombo;
 
-    const bool anyNow = st.g_kbdComboDown || st.g_padComboDown;
-
-    const bool blocked = IsInputBlockedByMenus();
-
-    if (anyNow && !st.g_hotkeyDown) {
-        st.g_hotkeyDown = true;
-
+    if (anyNow && !st.hotkey.hotkeyDown) {
+        st.hotkey.hotkeyDown = true;
         if (!blocked) {
             OnKeyPressed(player);
         }
-    } else if (!anyNow && st.g_hotkeyDown) {
-        st.g_hotkeyDown = false;
-
+    } else if (!anyNow && st.hotkey.hotkeyDown) {
+        st.hotkey.hotkeyDown = false;
         if (!blocked) {
             OnKeyReleased();
         }
+    }
+}
+
+void BowInput::IntegratedBowInputHandler::HandleSmartModePressed(bool blocked) const {
+    auto& st = BowInput::Globals();
+
+    st.hotkey.hotkeyDown = true;
+    if (!blocked) {
+        st.mode.smartPending = true;
+        st.mode.smartTimer = 0.0f;
+    } else {
+        st.mode.smartPending = false;
+        st.mode.smartTimer = 0.0f;
+    }
+}
+
+void BowInput::IntegratedBowInputHandler::HandleSmartModeReleased(RE::PlayerCharacter* player, bool blocked) const {
+    auto& st = BowInput::Globals();
+
+    st.hotkey.hotkeyDown = false;
+    if (!blocked) {
+        if (st.mode.smartPending) {
+            st.mode.smartPending = false;
+            st.mode.smartTimer = 0.0f;
+            st.mode.holdMode = false;
+            OnKeyPressed(player);
+        }
+        OnKeyReleased();
+    } else {
+        st.mode.smartPending = false;
+        st.mode.smartTimer = 0.0f;
+    }
+}
+
+void BowInput::IntegratedBowInputHandler::UpdateHotkeyState(RE::PlayerCharacter* player, bool newKbdCombo,
+                                                            bool newPadCombo) const {
+    auto& st = BowInput::Globals();
+
+    const bool prevAny = st.hotkey.kbdComboDown || st.hotkey.padComboDown;
+
+    st.hotkey.kbdComboDown = newKbdCombo;
+    st.hotkey.padComboDown = newPadCombo;
+
+    const bool anyNow = st.hotkey.kbdComboDown || st.hotkey.padComboDown;
+    const bool blocked = IsInputBlockedByMenus();
+
+    if (!st.mode.smartMode) {
+        HandleNormalMode(player, anyNow, blocked);
+        return;
+    }
+
+    if (anyNow && !prevAny) {
+        HandleSmartModePressed(blocked);
+    } else if (!anyNow && prevAny) {
+        HandleSmartModeReleased(player, blocked);
     }
 }
 
@@ -213,18 +263,18 @@ void BowInput::IntegratedBowInputHandler::HandleKeyboardButton(const RE::ButtonE
     const auto code = static_cast<int>(a_event->idCode);
     auto& st = BowInput::Globals();
 
-    if (st.g_captureRequested.load(std::memory_order_relaxed)) {
+    if (st.capture.captureRequested.load(std::memory_order_relaxed)) {
         if (a_event->IsDown()) {
             int encoded = code;
-            st.g_capturedEncoded.store(encoded, std::memory_order_relaxed);
-            st.g_captureRequested.store(false, std::memory_order_relaxed);
+            st.capture.capturedEncoded.store(encoded, std::memory_order_relaxed);
+            st.capture.captureRequested.store(false, std::memory_order_relaxed);
         }
         return;
     }
 
     int idx = -1;
     for (int i = 0; i < kMaxComboKeys; ++i) {
-        if (st.g_bowKeyScanCodes[i] >= 0 && code == st.g_bowKeyScanCodes[i]) {
+        if (st.hotkeyConfig.bowKeyScanCodes[i] >= 0 && code == st.hotkeyConfig.bowKeyScanCodes[i]) {
             idx = i;
             break;
         }
@@ -234,16 +284,16 @@ void BowInput::IntegratedBowInputHandler::HandleKeyboardButton(const RE::ButtonE
     }
 
     if (a_event->IsDown()) {
-        st.g_bowKeyDown[idx] = true;
+        st.hotkey.bowKeyDown[idx] = true;
     } else if (a_event->IsUp()) {
-        st.g_bowKeyDown[idx] = false;
+        st.hotkey.bowKeyDown[idx] = false;
     } else {
         return;
     }
 
     const bool comboK = AreAllActiveKeysDown();
 
-    UpdateHotkeyState(player, comboK, st.g_padComboDown);
+    UpdateHotkeyState(player, comboK, st.hotkey.padComboDown);
 }
 
 void BowInput::IntegratedBowInputHandler::HandleGamepadButton(const RE::ButtonEvent* a_event,
@@ -251,18 +301,18 @@ void BowInput::IntegratedBowInputHandler::HandleGamepadButton(const RE::ButtonEv
     const auto code = static_cast<int>(a_event->idCode);
     auto& st = BowInput::Globals();
 
-    if (st.g_captureRequested.load(std::memory_order_relaxed)) {
+    if (st.capture.captureRequested.load(std::memory_order_relaxed)) {
         if (a_event->IsDown()) {
             int encoded = -(code + 1);
-            st.g_capturedEncoded.store(encoded, std::memory_order_relaxed);
-            st.g_captureRequested.store(false, std::memory_order_relaxed);
+            st.capture.capturedEncoded.store(encoded, std::memory_order_relaxed);
+            st.capture.captureRequested.store(false, std::memory_order_relaxed);
         }
         return;
     }
 
     int idx = -1;
     for (int i = 0; i < kMaxComboKeys; ++i) {
-        if (st.g_bowPadButtons[i] >= 0 && code == st.g_bowPadButtons[i]) {
+        if (st.hotkeyConfig.bowPadButtons[i] >= 0 && code == st.hotkeyConfig.bowPadButtons[i]) {
             idx = i;
             break;
         }
@@ -272,23 +322,23 @@ void BowInput::IntegratedBowInputHandler::HandleGamepadButton(const RE::ButtonEv
     }
 
     if (a_event->IsDown()) {
-        st.g_bowPadDown[idx] = true;
+        st.hotkey.bowPadDown[idx] = true;
     } else if (a_event->IsUp()) {
-        st.g_bowPadDown[idx] = false;
+        st.hotkey.bowPadDown[idx] = false;
     } else {
         return;
     }
 
     const bool comboP = AreAllActivePadButtonsDown();
 
-    UpdateHotkeyState(player, st.g_kbdComboDown, comboP);
+    UpdateHotkeyState(player, st.hotkey.kbdComboDown, comboP);
 }
 
 void BowInput::IntegratedBowInputHandler::OnKeyPressed(RE::PlayerCharacter* player) const {
     auto* equipMgr = RE::ActorEquipManager::GetSingleton();
     auto& ist = BowInput::Globals();
 
-    ist.g_exitToken.fetch_add(1, std::memory_order_acq_rel);
+    ist.exit.token.fetch_add(1, std::memory_order_acq_rel);
     if (!equipMgr) {
         return;
     }
@@ -302,7 +352,7 @@ void BowInput::IntegratedBowInputHandler::OnKeyPressed(RE::PlayerCharacter* play
         return;
     }
 
-    if (ist.g_holdMode) {
+    if (ist.mode.holdMode) {
         if (!st.isUsingBow) {
             EnterBowMode(player, equipMgr, st);
             return;
@@ -326,7 +376,7 @@ void BowInput::IntegratedBowInputHandler::OnKeyPressed(RE::PlayerCharacter* play
 }
 
 void BowInput::IntegratedBowInputHandler::OnKeyReleased() const {
-    if (auto const& ist = BowInput::Globals(); !ist.g_holdMode) {
+    if (auto const& ist = BowInput::Globals(); !ist.mode.holdMode) {
         return;
     }
 
@@ -417,7 +467,7 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
     }
 
     BowState::SetAutoAttackHeld(false);
-    if (ist.g_holdMode && IsAutoDrawEnabled() && BowInput::IsHotkeyDown()) {
+    if (ist.mode.holdMode && IsAutoDrawEnabled() && BowInput::IsHotkeyDown()) {
         BowState::SetWaitingAutoAfterEquip(true);
     } else {
         BowState::SetWaitingAutoAfterEquip(false);
@@ -434,7 +484,7 @@ void BowInput::IntegratedBowInputHandler::ExitBowMode(RE::PlayerCharacter* playe
     if (!st.wasCombatPosed && !player->IsInCombat()) {
         SetWeaponDrawn(player, false);
 
-        ist.g_pendingRestoreAfterSheathe.store(true, std::memory_order_relaxed);
+        ist.pendingRestoreAfterSheathe.store(true, std::memory_order_relaxed);
 
         st.isUsingBow = false;
 
@@ -461,68 +511,120 @@ void BowInput::IntegratedBowInputHandler::ExitBowMode(RE::PlayerCharacter* playe
 }
 
 void BowInput::IntegratedBowInputHandler::ScheduleExitBowMode(bool waitForEquip, int delayMs) {
-    const auto myToken = BowInput::Globals().g_exitToken.fetch_add(1, std::memory_order_acq_rel) + 1;
+    auto& st = BowInput::Globals();
+    const auto token = st.exit.token.fetch_add(1, std::memory_order_acq_rel) + 1;
 
-    std::thread([waitForEquip, delayMs, myToken]() {
-        auto const& ist = BowInput::Globals();
+    st.exit.pending = true;
+    st.exit.waitForEquip = waitForEquip;
+    st.exit.waitEquipTimer = 0.0f;
+    st.exit.delayTimer = 0.0f;
+    st.exit.delayMs = delayMs;
+    st.exit.tokenSnapshot = token;
+}
 
-        if (waitForEquip) {
-            using clock = std::chrono::steady_clock;
-            auto start = clock::now();
+void BowInput::IntegratedBowInputHandler::UpdateSmartMode(RE::PlayerCharacter* player, float dt) const {
+    auto& st = BowInput::Globals();
+    if (!st.mode.smartMode || !st.mode.smartPending || !st.hotkey.hotkeyDown) {
+        return;
+    }
 
-            while (!BowState::IsBowEquipped()) {
-                if (ist.g_exitToken.load(std::memory_order_acquire) != myToken) {
-                    return;
-                }
-
-                auto now = clock::now();
-
-                if (auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
-                    elapsed > 3000) {
-                    break;
-                }
-
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
+    st.mode.smartTimer += dt;
+    if (st.mode.smartTimer >= kSmartClickThreshold) {
+        st.mode.smartPending = false;
+        st.mode.smartTimer = 0.0f;
+        st.mode.holdMode = true;
+        if (!IsInputBlockedByMenus()) {
+            OnKeyPressed(player);
         }
+    }
+}
 
-        if (delayMs > 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
-            if (ist.g_exitToken.load(std::memory_order_acquire) != myToken) {
-                return;
-            }
+void BowInput::IntegratedBowInputHandler::UpdateExitEquipWait(float dt) const {
+    auto& st = BowInput::Globals();
+    if (!st.exit.waitForEquip || BowState::IsBowEquipped()) {
+        return;
+    }
+
+    st.exit.waitEquipTimer += dt;
+    if (st.exit.waitEquipTimer >= st.exit.waitEquipMax) {
+        st.exit.waitForEquip = false;
+        st.exit.waitEquipTimer = 0.0f;
+    }
+}
+
+bool BowInput::IntegratedBowInputHandler::IsExitDelayReady(float dt) const {
+    auto& st = BowInput::Globals();
+    if (st.exit.delayMs <= 0) {
+        return true;
+    }
+
+    st.exit.delayTimer += dt * 1000.0f;
+    return st.exit.delayTimer >= static_cast<float>(st.exit.delayMs);
+}
+
+void BowInput::IntegratedBowInputHandler::CompleteExit() const {
+    auto& st = BowInput::Globals();
+    if (auto* equipMgr = RE::ActorEquipManager::GetSingleton(); equipMgr) {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (player) {
+            auto& bowSt = BowState::Get();
+            ExitBowMode(player, equipMgr, bowSt);
         }
+    }
 
-        auto* task = SKSE::GetTaskInterface();
-        if (!task) {
-            return;
+    st.exit.pending = false;
+    st.exit.waitForEquip = false;
+    st.exit.waitEquipTimer = 0.0f;
+    st.exit.delayTimer = 0.0f;
+    st.exit.delayMs = 0;
+}
+
+void BowInput::IntegratedBowInputHandler::UpdateExitPending(float dt) const {
+    auto const& st = BowInput::Globals();
+    if (!st.exit.pending) {
+        return;
+    }
+
+    if (st.exit.waitForEquip && !BowState::IsBowEquipped()) {
+        UpdateExitEquipWait(dt);
+    } else if (IsExitDelayReady(dt)) {
+        CompleteExit();
+    }
+}
+
+void BowInput::IntegratedBowInputHandler::ProcessButtonEvent(const RE::ButtonEvent* button,
+                                                             RE::PlayerCharacter* player) const {
+    if (!button->IsDown() && !button->IsUp()) {
+        return;
+    }
+
+    auto dev = button->GetDevice();
+    if (dev == RE::INPUT_DEVICE::kKeyboard) {
+        HandleKeyboardButton(button, player);
+    } else if (dev == RE::INPUT_DEVICE::kGamepad) {
+        HandleGamepadButton(button, player);
+    }
+}
+
+void BowInput::IntegratedBowInputHandler::ProcessInputEvents(RE::InputEvent* const* a_events,
+                                                             RE::PlayerCharacter* player) const {
+    for (auto e = *a_events; e; e = e->next) {
+        if (auto button = e->AsButtonEvent()) {
+            ProcessButtonEvent(button, player);
         }
+    }
+}
 
-        task->AddTask([myToken]() {
-            if (auto const& istInner = BowInput::Globals();
-                istInner.g_exitToken.load(std::memory_order_acquire) != myToken) {
-                return;
-            }
-
-            auto* player = RE::PlayerCharacter::GetSingleton();
-            auto* equipMgr = RE::ActorEquipManager::GetSingleton();
-            if (!player || !equipMgr) {
-                return;
-            }
-
-            auto& st = BowState::Get();
-            if (!st.isUsingBow) {
-                return;
-            }
-
-            if (IsAutoDrawEnabled() && BowState::IsAutoAttackHeld()) {
-                StopAutoAttackDraw();
-                BowState::SetAutoAttackHeld(false);
-            }
-
-            ExitBowMode(player, equipMgr, st);
-        });
-    }).detach();
+float BowInput::IntegratedBowInputHandler::CalculateDeltaTime() const {
+    using clock = std::chrono::steady_clock;
+    static clock::time_point last = clock::now();
+    const auto now = clock::now();
+    float dt = std::chrono::duration<float>(now - last).count();
+    last = now;
+    if (dt < 0.0f || dt > 0.5f) {
+        dt = 0.0f;
+    }
+    return dt;
 }
 
 RE::BSEventNotifyControl BowInput::IntegratedBowInputHandler::ProcessEvent(RE::InputEvent* const* a_events,
@@ -536,30 +638,11 @@ RE::BSEventNotifyControl BowInput::IntegratedBowInputHandler::ProcessEvent(RE::I
         return RE::BSEventNotifyControl::kContinue;
     }
 
-    using clock = std::chrono::steady_clock;
-    static clock::time_point last = clock::now();
-    const auto now = clock::now();
-    float dt = std::chrono::duration<float>(now - last).count();
-    last = now;
-    if (dt < 0.0f || dt > 0.5f) {
-        dt = 0.0f;
-    }
+    float dt = CalculateDeltaTime();
 
-    for (auto e = *a_events; e; e = e->next) {
-        if (auto button = e->AsButtonEvent()) {
-            if (!button->IsDown() && !button->IsUp()) {
-                continue;
-            }
-
-            auto dev = button->GetDevice();
-            if (dev == RE::INPUT_DEVICE::kKeyboard) {
-                HandleKeyboardButton(button, player);
-            } else if (dev == RE::INPUT_DEVICE::kGamepad) {
-                HandleGamepadButton(button, player);
-            }
-        }
-    }
-
+    UpdateSmartMode(player, dt);
+    UpdateExitPending(dt);
+    ProcessInputEvents(a_events, player);
     PumpAttackHold(dt);
 
     return RE::BSEventNotifyControl::kContinue;
@@ -588,9 +671,28 @@ void BowInput::RegisterInputHandler() {
     }
 }
 
-void BowInput::SetHoldMode(bool hold) {
+void BowInput::SetMode(int mode) {
     auto& st = BowInput::Globals();
-    st.g_holdMode = hold;
+
+    st.hotkey.hotkeyDown = false;
+    st.mode.smartPending = false;
+    st.mode.smartTimer = 0.0f;
+
+    switch (mode) {
+        case 0:
+            st.mode.holdMode = true;
+            st.mode.smartMode = false;
+            break;
+        case 1:
+            st.mode.holdMode = false;
+            st.mode.smartMode = false;
+            break;
+        case 2:
+        default:
+            st.mode.holdMode = false;
+            st.mode.smartMode = true;
+            break;
+    }
 }
 
 void BowInput::SetKeyScanCodes(int k1, int k2, int k3) {
@@ -598,12 +700,12 @@ void BowInput::SetKeyScanCodes(int k1, int k2, int k3) {
     std::array<int, kMaxComboKeys> vals{k1, k2, k3};
 
     for (int i = 0; i < kMaxComboKeys; ++i) {
-        st.g_bowKeyScanCodes[i] = vals[i];
-        st.g_bowKeyDown[i] = false;
+        st.hotkeyConfig.bowKeyScanCodes[i] = vals[i];
+        st.hotkey.bowKeyDown[i] = false;
     }
 
-    st.g_kbdComboDown = false;
-    st.g_hotkeyDown = false;
+    st.hotkey.kbdComboDown = false;
+    st.hotkey.hotkeyDown = false;
 }
 
 void BowInput::SetGamepadButtons(int b1, int b2, int b3) {
@@ -611,24 +713,24 @@ void BowInput::SetGamepadButtons(int b1, int b2, int b3) {
     std::array<int, kMaxComboKeys> vals = {b1, b2, b3};
 
     for (int i = 0; i < kMaxComboKeys; ++i) {
-        st.g_bowPadButtons[i] = vals[i];
-        st.g_bowPadDown[i] = false;
+        st.hotkeyConfig.bowPadButtons[i] = vals[i];
+        st.hotkey.bowPadDown[i] = false;
     }
 
-    st.g_padComboDown = false;
-    st.g_hotkeyDown = false;
+    st.hotkey.padComboDown = false;
+    st.hotkey.hotkeyDown = false;
 }
 
 void BowInput::RequestGamepadCapture() {
     auto& st = BowInput::Globals();
-    st.g_captureRequested.store(true, std::memory_order_relaxed);
-    st.g_capturedEncoded.store(-1, std::memory_order_relaxed);
+    st.capture.captureRequested.store(true, std::memory_order_relaxed);
+    st.capture.capturedEncoded.store(-1, std::memory_order_relaxed);
 }
 
 int BowInput::PollCapturedGamepadButton() {
     auto& st = BowInput::Globals();
-    if (int v = st.g_capturedEncoded.load(std::memory_order_relaxed); v != -1) {
-        st.g_capturedEncoded.store(-1, std::memory_order_relaxed);
+    if (int v = st.capture.capturedEncoded.load(std::memory_order_relaxed); v != -1) {
+        st.capture.capturedEncoded.store(-1, std::memory_order_relaxed);
         return v;
     }
     return -1;
@@ -636,7 +738,7 @@ int BowInput::PollCapturedGamepadButton() {
 
 bool BowInput::IsHotkeyDown() {
     auto const& st = BowInput::Globals();
-    return st.g_hotkeyDown;
+    return st.hotkey.hotkeyDown;
 }
 
 BowInput::BowAnimEventSink* BowInput::BowAnimEventSink::GetSingleton() {
@@ -666,7 +768,7 @@ RE::BSEventNotifyControl BowInput::BowAnimEventSink::ProcessEvent(const RE::BSAn
         const bool autoDraw = IsAutoDrawEnabled();
         const bool hotkeyDown = BowInput::IsHotkeyDown();
 
-        if (waiting && usingBow && ist.g_holdMode && autoDraw && hotkeyDown) {
+        if (waiting && usingBow && ist.mode.holdMode && autoDraw && hotkeyDown) {
             BowState::SetWaitingAutoAfterEquip(false);
 
             if (!BowState::IsAutoAttackHeld()) {
