@@ -7,6 +7,7 @@
 #include "BowStrings.h"
 #include "PCH.h"
 #include "SKSEMenuFramework.h"
+#include "patchs/UnMapBlock.h"
 
 using IntegratedBow::BowMode;
 using IntegratedBow::GetBowConfig;
@@ -194,16 +195,19 @@ namespace {
                                     cfg.gamepadButton2.load(std::memory_order_relaxed),
                                     cfg.gamepadButton3.load(std::memory_order_relaxed));
 
+        UnMapBlock::SetNoLeftBlockPatch(cfg.noLeftBlockPatch);
+
         g_pending = false;
 
         ImGui::SameLine();
         ImGui::TextDisabled("✓");
     }
 
-    void DrawAutoDrawAndDelaySection(IntegratedBow::BowConfig& cfg) {
+    void DrawAutoDrawAndDelaySection(IntegratedBow::BowConfig& cfg, bool& dirty) {
         if (bool autoDraw = cfg.autoDrawEnabled.load(std::memory_order_relaxed); ImGui::Checkbox(
                 IntegratedBow::Strings::Get("Item_AutoDrawEnabled", "Auto draw arrow").c_str(), &autoDraw)) {
             cfg.autoDrawEnabled.store(autoDraw, std::memory_order_relaxed);
+            dirty = true;
         }
 
         ImGui::SameLine();
@@ -220,6 +224,7 @@ namespace {
                               1.0f, "%.2f")) {
             if (delaySec < 0.0f) delaySec = 0.0f;
             cfg.sheathedDelaySeconds.store(delaySec, std::memory_order_relaxed);
+            dirty = true;
         }
 
         ImGui::SameLine();
@@ -234,12 +239,30 @@ namespace {
         ImGui::Separator();
         ImGui::TextDisabled("%s", IntegratedBow::Strings::Get("Item_Tip", "Tip: -1 disables gamepad binding.").c_str());
     }
+
+    void DrawPatchesSection(IntegratedBow::BowConfig& cfg, bool& dirty) {
+        bool noLeftBlock = cfg.noLeftBlockPatch;
+
+        const auto& lbl = IntegratedBow::Strings::Get("Item_NoLeftBlockPatch", "Disable vanilla left-hand block (LT)");
+        const auto& tip = IntegratedBow::Strings::Get(
+            "Item_NoLeftBlockPatch_Tip",
+            "Unmaps the default left-hand block (leftAttack) from the gamepad LT. "
+            "Use this if another mod provides a separate block key and you want to use LT only as the bow hotkey.");
+
+        if (ImGui::Checkbox(lbl.c_str(), &noLeftBlock)) {
+            cfg.noLeftBlockPatch = noLeftBlock;
+            dirty = true;
+        }
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", tip.c_str());
+    }
 }
 
-void __stdcall IntegratedBow_UI::DrawConfig() {
-    auto& cfg = GetBowConfig();
+void __stdcall IntegratedBow_UI::DrawInputTab() {
+    auto& cfg = IntegratedBow::GetBowConfig();
 
-    const auto& title = IntegratedBow::Strings::Get("MenuTitle", "Integrated Bow");
+    const auto& title = IntegratedBow::Strings::Get("MenuTitle", "Integrated Bow - Input");
     ImGui::TextUnformatted(title.c_str());
     ImGui::Separator();
 
@@ -248,22 +271,62 @@ void __stdcall IntegratedBow_UI::DrawConfig() {
     DrawModeSection(cfg, dirty);
     DrawKeyboardHotkeysSection(cfg, dirty);
     DrawGamepadHotkeysSection(cfg, dirty);
+    DrawFinalTip();
 
     if (dirty) {
         g_pending = true;
     }
 
     DrawPendingAndApplySection(cfg);
+}
 
+void __stdcall IntegratedBow_UI::DrawBowTab() {
+    auto& cfg = IntegratedBow::GetBowConfig();
+
+    const auto& title = IntegratedBow::Strings::Get("MenuTitle_Bow", "Integrated Bow - Bow");
+    ImGui::TextUnformatted(title.c_str());
     ImGui::Separator();
-    DrawAutoDrawAndDelaySection(cfg);
-    DrawFinalTip();
+
+    bool dirty = false;
+
+    DrawAutoDrawAndDelaySection(cfg, dirty);
+
+    if (dirty) {
+        g_pending = true;
+    }
+
+    DrawPendingAndApplySection(cfg);
+}
+
+void __stdcall IntegratedBow_UI::DrawPatchesTab() {
+    auto& cfg = IntegratedBow::GetBowConfig();
+
+    const auto& title = IntegratedBow::Strings::Get("MenuTitle_Patches", "Integrated Bow - Patches");
+    ImGui::TextUnformatted(title.c_str());
+    ImGui::Separator();
+
+    bool dirty = false;
+
+    DrawPatchesSection(cfg, dirty);
+
+    if (dirty) {
+        g_pending = true;
+    }
+
+    DrawPendingAndApplySection(cfg);
 }
 
 void IntegratedBow_UI::Register() {
     if (!SKSEMenuFramework::IsInstalled()) return;
 
     SKSEMenuFramework::SetSection(IntegratedBow::Strings::Get("SectionName", "Integrated Bow"));
-    SKSEMenuFramework::AddSectionItem(IntegratedBow::Strings::Get("SectionItemName", "Input"),
-                                      IntegratedBow_UI::DrawConfig);
+
+    SKSEMenuFramework::AddSectionItem(IntegratedBow::Strings::Get("SectionItem_Input", "Input"),
+                                      IntegratedBow_UI::DrawInputTab);
+
+    SKSEMenuFramework::AddSectionItem(IntegratedBow::Strings::Get("SectionItem_Bow", "Bow"),
+                                      IntegratedBow_UI::DrawBowTab);
+
+    SKSEMenuFramework::AddSectionItem(IntegratedBow::Strings::Get("SectionItem_Patches", "Patches"),
+                                      IntegratedBow_UI::DrawPatchesTab);
 }

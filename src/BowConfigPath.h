@@ -9,7 +9,7 @@
 
 namespace IntegratedBow {
     inline const std::filesystem::path& GetThisDllDir() {
-        static std::filesystem::path cached = []() {
+        static std::filesystem::path cached = []() {  // NOSONAR
             HMODULE hMod = nullptr;
 
             if (!::GetModuleHandleExW(
