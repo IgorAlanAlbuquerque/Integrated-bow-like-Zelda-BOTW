@@ -63,8 +63,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
     cfg.Load();
     IntegratedBow::Strings::Load();
 
-    const bool hold = (cfg.mode.load(std::memory_order_relaxed) == IntegratedBow::BowMode::Hold);
-    BowInput::SetHoldMode(hold);
+    BowInput::SetMode(std::to_underlying(cfg.mode.load(std::memory_order_relaxed)));
     BowInput::SetKeyScanCodes(cfg.keyboardScanCode1.load(std::memory_order_relaxed),
                               cfg.keyboardScanCode2.load(std::memory_order_relaxed),
                               cfg.keyboardScanCode3.load(std::memory_order_relaxed));

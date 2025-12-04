@@ -22,17 +22,37 @@ namespace {
 
     void DrawModeSection(IntegratedBow::BowConfig& cfg, bool& dirty) {
         BowMode mode = GetModeFromConfig(cfg);
-        int modeIndex = (mode == Press) ? 1 : 0;
+
+        int modeIndex = 0;
+        switch (mode) {
+            case Hold:
+                modeIndex = 0;
+                break;
+            case Press:
+                modeIndex = 1;
+                break;
+            case Smart:
+                modeIndex = 2;
+                break;
+        }
 
         const auto& lblMode = IntegratedBow::Strings::Get("Item_InputMode", "Bow mode");
         const auto& lblHold = IntegratedBow::Strings::Get("Item_InputMode_Hold", "Hold");
         const auto& lblPress = IntegratedBow::Strings::Get("Item_InputMode_Press", "Press");
+        const auto& lblSmart = IntegratedBow::Strings::Get("Item_InputMode_Smart", "Smart (click / hold)");
 
-        const std::array<const char*, 2> items = {lblHold.c_str(), lblPress.c_str()};
+        const std::array<const char*, 3> items = {lblHold.c_str(), lblPress.c_str(), lblSmart.c_str()};
 
         ImGui::SetNextItemWidth(220.0f);
         if (ImGui::Combo(lblMode.c_str(), &modeIndex, items.data(), static_cast<int>(items.size()))) {
-            cfg.mode.store(modeIndex == 1 ? Press : Hold, std::memory_order_relaxed);
+            BowMode newMode = Hold;
+            if (modeIndex == 1) {
+                newMode = Press;
+            } else if (modeIndex == 2) {
+                newMode = Smart;
+            }
+
+            cfg.mode.store(newMode, std::memory_order_relaxed);
             dirty = true;
         }
     }
@@ -164,8 +184,7 @@ namespace {
 
         cfg.Save();
 
-        const bool hold = (cfg.mode.load(std::memory_order_relaxed) == BowMode::Hold);
-        BowInput::SetHoldMode(hold);
+        BowInput::SetMode(std::to_underlying(cfg.mode.load(std::memory_order_relaxed)));
 
         BowInput::SetKeyScanCodes(cfg.keyboardScanCode1.load(std::memory_order_relaxed),
                                   cfg.keyboardScanCode2.load(std::memory_order_relaxed),

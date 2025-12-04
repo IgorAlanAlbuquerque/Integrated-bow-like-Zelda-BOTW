@@ -1,12 +1,10 @@
 #pragma once
+#include <array>
 #include <mutex>
 #include <queue>
 
 #include "BowConfig.h"
 #include "PCH.h"
-#include "RE/E/ExtraTextDisplayData.h"
-#include "RE/P/PlayerCharacter.h"
-#include "RE/T/TESObjectREFR.h"
 
 namespace RE {
     class InputEvent;
