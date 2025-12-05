@@ -90,6 +90,7 @@ namespace BowInput {
         void ProcessButtonEvent(const RE::ButtonEvent* button, RE::PlayerCharacter* player) const;
         void ProcessInputEvents(RE::InputEvent* const* a_events, RE::PlayerCharacter* player) const;
         float CalculateDeltaTime() const;
+        void ResetExitState() const;
     };
 
     class BowAnimEventSink : public RE::BSTEventSink<RE::BSAnimationGraphEvent> {
