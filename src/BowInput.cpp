@@ -338,7 +338,14 @@ void BowInput::IntegratedBowInputHandler::OnKeyPressed(RE::PlayerCharacter* play
     auto* equipMgr = RE::ActorEquipManager::GetSingleton();
     auto& ist = BowInput::Globals();
 
-    ist.exit.token.fetch_add(1, std::memory_order_acq_rel);
+    if (ist.mode.holdMode && ist.exit.pending) {
+        ist.exit.pending = false;
+        ist.exit.waitForEquip = false;
+        ist.exit.waitEquipTimer = 0.0f;
+        ist.exit.delayTimer = 0.0f;
+        ist.exit.delayMs = 0;
+    }
+
     if (!equipMgr) {
         return;
     }
@@ -512,14 +519,12 @@ void BowInput::IntegratedBowInputHandler::ExitBowMode(RE::PlayerCharacter* playe
 
 void BowInput::IntegratedBowInputHandler::ScheduleExitBowMode(bool waitForEquip, int delayMs) {
     auto& st = BowInput::Globals();
-    const auto token = st.exit.token.fetch_add(1, std::memory_order_acq_rel) + 1;
 
     st.exit.pending = true;
     st.exit.waitForEquip = waitForEquip;
     st.exit.waitEquipTimer = 0.0f;
     st.exit.delayTimer = 0.0f;
     st.exit.delayMs = delayMs;
-    st.exit.tokenSnapshot = token;
 }
 
 void BowInput::IntegratedBowInputHandler::UpdateSmartMode(RE::PlayerCharacter* player, float dt) const {

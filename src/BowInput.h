@@ -35,8 +35,6 @@ namespace BowInput {
         float delayTimer = 0.0f;
         float waitEquipMax = 3.0f;
         int delayMs = 0;
-        std::atomic_uint64_t token{0};
-        std::uint64_t tokenSnapshot = 0;
     };
 
     struct GlobalState {
