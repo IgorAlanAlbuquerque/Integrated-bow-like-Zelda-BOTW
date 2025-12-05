@@ -2,9 +2,7 @@
 
 #include "../PCH.h"
 
-namespace UnMapBlock {
-    SavedLeftAttackMapping g_savedLeftAttack;
-}
+UnMapBlock::SavedLeftAttackMapping UnMapBlock::g_savedLeftAttack;
 
 void UnMapBlock::SetNoLeftBlockPatch(bool patch) {
     auto const* controlMap = RE::ControlMap::GetSingleton();
@@ -33,14 +31,10 @@ void UnMapBlock::SetNoLeftBlockPatch(bool patch) {
 
                 m.inputKey = static_cast<std::uint16_t>(RE::ControlMap::kInvalid);
                 m.modifier = 0;
-
-                spdlog::info("[IntegratedBow] No-left-block patch ENABLED (gamepad leftAttack unmapped).");
             } else {
                 if (g_savedLeftAttack.saved) {
                     m.inputKey = g_savedLeftAttack.inputKey;
                     m.modifier = g_savedLeftAttack.modifier;
-
-                    spdlog::info("[IntegratedBow] No-left-block patch DISABLED (gamepad leftAttack restored).");
                 }
             }
         }

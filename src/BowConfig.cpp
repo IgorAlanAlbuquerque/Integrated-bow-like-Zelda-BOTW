@@ -142,6 +142,7 @@ namespace IntegratedBow {
         }
 
         ini.SetValue("Input", "Mode", modeStr);
+
         const int k1 = keyboardScanCode1.load(std::memory_order_relaxed);
         const int k2 = keyboardScanCode2.load(std::memory_order_relaxed);
         const int k3 = keyboardScanCode3.load(std::memory_order_relaxed);
@@ -164,12 +165,9 @@ namespace IntegratedBow {
         ini.SetDoubleValue("Input", "SheathedDelaySeconds",
                            static_cast<double>(sheathedDelaySeconds.load(std::memory_order_relaxed)));
 
-        std::error_code ec;
-        std::filesystem::create_directories(path.parent_path(), ec);
-        ini.SaveFile(path.string().c_str());
-
         ini.SetBoolValue("Patches", "NoLeftBlockPatch", noLeftBlockPatch);
 
+        std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);
         ini.SaveFile(path.string().c_str());
     }

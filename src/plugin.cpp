@@ -43,8 +43,8 @@ namespace {
         if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
             BowInput::RegisterAnimEventSink();
             auto const& cfg = IntegratedBow::GetBowConfig();
-            const auto bowID = cfg.chosenBowFormID.load(std::memory_order_relaxed);
-            if (bowID != 0) {
+
+            if (const auto bowID = cfg.chosenBowFormID.load(std::memory_order_relaxed); bowID != 0) {
                 auto* bow = RE::TESForm::LookupByID<RE::TESObjectWEAP>(bowID);
                 if (bow) {
                     BowState::LoadChosenBow(bow);
@@ -52,6 +52,7 @@ namespace {
                     spdlog::warn("IntegratedBow: saved bow FormID 0x{:08X} not found, ignoring", bowID);
                 }
             }
+            UnMapBlock::SetNoLeftBlockPatch(cfg.noLeftBlockPatch);
         }
     }
 }
@@ -63,7 +64,6 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
     auto& cfg = IntegratedBow::GetBowConfig();
     cfg.Load();
     IntegratedBow::Strings::Load();
-    UnMapBlock::SetNoLeftBlockPatch(cfg.noLeftBlockPatch);
 
     BowInput::SetMode(std::to_underlying(cfg.mode.load(std::memory_order_relaxed)));
     BowInput::SetKeyScanCodes(cfg.keyboardScanCode1.load(std::memory_order_relaxed),
