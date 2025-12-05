@@ -151,33 +151,69 @@ namespace {
         auto* player = RE::PlayerCharacter::GetSingleton();
         BowState::SetBowEquipped(false);
 
+        if (!player) {
+            return;
+        }
+
         if (ist.pendingRestoreAfterSheathe.load(std::memory_order_relaxed)) {
             ist.pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
 
             auto* equipMgr = RE::ActorEquipManager::GetSingleton();
-            if (player && equipMgr) {
-                auto& st = BowState::Get();
-
-                if (st.prevRight.base) {
-                    equipMgr->EquipObject(player, st.prevRight.base, st.prevRight.extra, 1, nullptr, true, true, true,
-                                          false);
-                }
-                if (st.prevLeft.base) {
-                    equipMgr->EquipObject(player, st.prevLeft.base, st.prevLeft.extra, 1, nullptr, true, true, true,
-                                          false);
-                }
-
-                if (!st.prevRight.base && !st.prevLeft.base && st.chosenBow.base) {
-                    equipMgr->UnequipObject(player, st.chosenBow.base, st.chosenBow.extra, 1, nullptr, true, true, true,
-                                            false, nullptr);
-                }
-
-                st.prevRight.base = nullptr;
-                st.prevRight.extra = nullptr;
-                st.prevLeft.base = nullptr;
-                st.prevLeft.extra = nullptr;
+            if (!equipMgr) {
+                return;
             }
+
+            auto& st = BowState::Get();
+
+            if (st.prevRight.base) {
+                equipMgr->EquipObject(player, st.prevRight.base, st.prevRight.extra, 1, nullptr, true, true, true,
+                                      false);
+            }
+            if (st.prevLeft.base) {
+                equipMgr->EquipObject(player, st.prevLeft.base, st.prevLeft.extra, 1, nullptr, true, true, true, false);
+            }
+
+            if (!st.prevRight.base && !st.prevLeft.base && st.chosenBow.base) {
+                equipMgr->UnequipObject(player, st.chosenBow.base, st.chosenBow.extra, 1, nullptr, true, true, true,
+                                        false, nullptr);
+            }
+
+            st.prevRight.base = nullptr;
+            st.prevRight.extra = nullptr;
+            st.prevLeft.base = nullptr;
+            st.prevLeft.extra = nullptr;
+            return;
         }
+
+        auto& st = BowState::Get();
+        if (!st.isUsingBow) {
+            return;
+        }
+
+        auto* equipMgr = RE::ActorEquipManager::GetSingleton();
+        if (!equipMgr) {
+            st.isUsingBow = false;
+            BowState::ClearPrevWeapons();
+            return;
+        }
+
+        if (st.prevRight.base) {
+            equipMgr->EquipObject(player, st.prevRight.base, st.prevRight.extra, 1, nullptr, true, true, true, false);
+        }
+        if (st.prevLeft.base) {
+            equipMgr->EquipObject(player, st.prevLeft.base, st.prevLeft.extra, 1, nullptr, true, true, true, false);
+        }
+
+        if (!st.prevRight.base && !st.prevLeft.base && st.chosenBow.base) {
+            equipMgr->UnequipObject(player, st.chosenBow.base, st.chosenBow.extra, 1, nullptr, true, true, true, false,
+                                    nullptr);
+        }
+
+        st.isUsingBow = false;
+        st.prevRight.base = nullptr;
+        st.prevRight.extra = nullptr;
+        st.prevLeft.base = nullptr;
+        st.prevLeft.extra = nullptr;
     }
 }
 
@@ -296,6 +332,15 @@ void BowInput::IntegratedBowInputHandler::HandleKeyboardButton(const RE::ButtonE
     UpdateHotkeyState(player, comboK, st.hotkey.padComboDown);
 }
 
+void BowInput::IntegratedBowInputHandler::ResetExitState() const {
+    auto& st = BowInput::Globals();
+    st.exit.pending = false;
+    st.exit.waitForEquip = false;
+    st.exit.waitEquipTimer = 0.0f;
+    st.exit.delayTimer = 0.0f;
+    st.exit.delayMs = 0;
+}
+
 void BowInput::IntegratedBowInputHandler::HandleGamepadButton(const RE::ButtonEvent* a_event,
                                                               RE::PlayerCharacter* player) const {
     const auto code = static_cast<int>(a_event->idCode);
@@ -336,14 +381,10 @@ void BowInput::IntegratedBowInputHandler::HandleGamepadButton(const RE::ButtonEv
 
 void BowInput::IntegratedBowInputHandler::OnKeyPressed(RE::PlayerCharacter* player) const {
     auto* equipMgr = RE::ActorEquipManager::GetSingleton();
-    auto& ist = BowInput::Globals();
+    auto const& ist = BowInput::Globals();
 
     if (ist.mode.holdMode && ist.exit.pending) {
-        ist.exit.pending = false;
-        ist.exit.waitForEquip = false;
-        ist.exit.waitEquipTimer = 0.0f;
-        ist.exit.delayTimer = 0.0f;
-        ist.exit.delayMs = 0;
+        ResetExitState();
     }
 
     if (!equipMgr) {
@@ -568,7 +609,6 @@ bool BowInput::IntegratedBowInputHandler::IsExitDelayReady(float dt) const {
 }
 
 void BowInput::IntegratedBowInputHandler::CompleteExit() const {
-    auto& st = BowInput::Globals();
     if (auto* equipMgr = RE::ActorEquipManager::GetSingleton(); equipMgr) {
         auto* player = RE::PlayerCharacter::GetSingleton();
         if (player) {
@@ -577,11 +617,7 @@ void BowInput::IntegratedBowInputHandler::CompleteExit() const {
         }
     }
 
-    st.exit.pending = false;
-    st.exit.waitForEquip = false;
-    st.exit.waitEquipTimer = 0.0f;
-    st.exit.delayTimer = 0.0f;
-    st.exit.delayMs = 0;
+    ResetExitState();
 }
 
 void BowInput::IntegratedBowInputHandler::UpdateExitPending(float dt) const {
