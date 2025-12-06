@@ -255,6 +255,11 @@ namespace BowState {
         RE::ExtraDataList* extra{nullptr};
     };
 
+    struct ExtraEquippedItem {
+        RE::TESBoundObject* base{nullptr};
+        RE::ExtraDataList* extra{nullptr};
+    };
+
     struct IntegratedBowState {
         ChosenInstance chosenBow{};
         ChosenInstance prevRight{};
@@ -265,6 +270,7 @@ namespace BowState {
         bool isAutoAttackHeld{false};
         std::atomic_bool waitingAutoAttackAfterEquip{false};
         std::atomic_bool bowEquipped{false};
+        std::vector<ExtraEquippedItem> prevExtraEquipped{};
     };
 
     inline IntegratedBowState& Get() {
@@ -487,5 +493,85 @@ namespace BowState {
     inline bool IsWaitingAutoAfterEquip() {
         auto const& st = Get();
         return st.waitingAutoAttackAfterEquip.load(std::memory_order_relaxed);
+    }
+
+    inline void SetPrevExtraEquipped(std::vector<ExtraEquippedItem>&& items) {
+        auto& st = Get();
+        st.prevExtraEquipped = std::move(items);
+    }
+
+    inline const std::vector<ExtraEquippedItem>& GetPrevExtraEquipped() { return Get().prevExtraEquipped; }
+
+    inline void ClearPrevExtraEquipped() {
+        auto& st = Get();
+        st.prevExtraEquipped.clear();
+    }
+
+    inline void CaptureWornArmorSnapshot(std::vector<ExtraEquippedItem>& out) {
+        out.clear();
+
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player) {
+            return;
+        }
+
+        auto inventory = player->GetInventory([](RE::TESBoundObject&) { return true; });
+
+        for (auto const& [obj, data] : inventory) {
+            auto* armor = obj->As<RE::TESObjectARMO>();
+            if (!armor) {
+                continue;
+            }
+
+            auto const& entryPtr = data.second;
+            auto const* entry = entryPtr.get();
+            if (!entry || !entry->extraLists) {
+                continue;
+            }
+
+            for (auto* extra : *entry->extraLists) {
+                if (!extra) {
+                    continue;
+                }
+
+                if (extra->HasType(RE::ExtraDataType::kWorn) || extra->HasType(RE::ExtraDataType::kWornLeft)) {
+                    out.push_back(ExtraEquippedItem{armor->As<RE::TESBoundObject>(), extra});
+                }
+            }
+        }
+    }
+
+    inline std::vector<ExtraEquippedItem> DiffArmorSnapshot(const std::vector<ExtraEquippedItem>& before,
+                                                            const std::vector<ExtraEquippedItem>& after) {
+        std::vector<ExtraEquippedItem> removed;
+        for (auto const& b : before) {
+            bool stillWorn = false;
+            for (auto const& a : after) {
+                if (a.base == b.base && a.extra == b.extra) {
+                    stillWorn = true;
+                    break;
+                }
+            }
+            if (!stillWorn) {
+                removed.push_back(b);
+            }
+        }
+        return removed;
+    }
+
+    inline void ReequipPrevExtraEquipped(RE::Actor* actor, RE::ActorEquipManager* equipMgr) {
+        if (!actor || !equipMgr) {
+            return;
+        }
+
+        auto& st = Get();
+        for (auto const& item : st.prevExtraEquipped) {
+            if (!item.base) {
+                continue;
+            }
+            equipMgr->EquipObject(actor, item.base, item.extra, 1, nullptr, true, true, true, false);
+        }
+
+        st.prevExtraEquipped.clear();
     }
 }
