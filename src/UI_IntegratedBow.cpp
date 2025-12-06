@@ -7,6 +7,7 @@
 #include "BowStrings.h"
 #include "PCH.h"
 #include "SKSEMenuFramework.h"
+#include "patchs/HiddenItemsPatch.h"
 #include "patchs/UnMapBlock.h"
 
 using IntegratedBow::BowMode;
@@ -196,6 +197,7 @@ namespace {
                                     cfg.gamepadButton3.load(std::memory_order_relaxed));
 
         UnMapBlock::SetNoLeftBlockPatch(cfg.noLeftBlockPatch);
+        HiddenItemsPatch::SetEnabled(cfg.hideEquippedFromJsonPatch);
 
         g_pending = false;
 
@@ -242,6 +244,7 @@ namespace {
 
     void DrawPatchesSection(IntegratedBow::BowConfig& cfg, bool& dirty) {
         bool noLeftBlock = cfg.noLeftBlockPatch;
+        bool hideFromJson = cfg.hideEquippedFromJsonPatch;
 
         const auto& lbl = IntegratedBow::Strings::Get("Item_NoLeftBlockPatch", "Disable vanilla left-hand block (LT)");
         const auto& tip = IntegratedBow::Strings::Get(
@@ -256,6 +259,23 @@ namespace {
 
         ImGui::SameLine();
         ImGui::TextDisabled("%s", tip.c_str());
+
+        ImGui::Separator();
+
+        const auto& lblJson =
+            IntegratedBow::Strings::Get("Item_HideEquippedJsonPatch", "Hide extra equipped items from JSON list");
+        const auto& tipJson =
+            IntegratedBow::Strings::Get("Item_HideEquippedJsonPatch_Tip",
+                                        "When enabled, items whose FormIDs are listed in patchs/HiddenEquipped.json "
+                                        "will be unequipped while the bow is active and re-equipped on exit.");
+
+        if (ImGui::Checkbox(lblJson.c_str(), &hideFromJson)) {
+            cfg.hideEquippedFromJsonPatch = hideFromJson;
+            dirty = true;
+        }
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", tipJson.c_str());
     }
 }
 

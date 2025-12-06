@@ -12,6 +12,7 @@
 #include "Hooks.h"
 #include "PCH.h"
 #include "UI_IntegratedBow.h"
+#include "patchs/HiddenItemsPatch.h"
 #include "patchs/UnMapBlock.h"
 
 #ifndef DLLEXPORT
@@ -53,6 +54,7 @@ namespace {
                 }
             }
             UnMapBlock::SetNoLeftBlockPatch(cfg.noLeftBlockPatch);
+            HiddenItemsPatch::SetEnabled(cfg.hideEquippedFromJsonPatch);
         }
     }
 }
@@ -64,6 +66,8 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
     auto& cfg = IntegratedBow::GetBowConfig();
     cfg.Load();
     IntegratedBow::Strings::Load();
+
+    HiddenItemsPatch::LoadConfigFile();
 
     BowInput::SetMode(std::to_underlying(cfg.mode.load(std::memory_order_relaxed)));
     BowInput::SetKeyScanCodes(cfg.keyboardScanCode1.load(std::memory_order_relaxed),

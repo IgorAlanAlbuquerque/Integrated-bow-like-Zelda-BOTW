@@ -117,6 +117,8 @@ namespace IntegratedBow {
         }
 
         noLeftBlockPatch = _getBool(ini, "Patches", "NoLeftBlockPatch", false);
+
+        hideEquippedFromJsonPatch = _getBool(ini, "Patches", "HideEquippedFromJsonPatch", false);
     }
 
     void BowConfig::Save() const {
@@ -166,6 +168,10 @@ namespace IntegratedBow {
                            static_cast<double>(sheathedDelaySeconds.load(std::memory_order_relaxed)));
 
         ini.SetBoolValue("Patches", "NoLeftBlockPatch", noLeftBlockPatch);
+
+        ini.SetBoolValue("Patches", "NoLeftBlockPatch", noLeftBlockPatch);
+
+        ini.SetBoolValue("Patches", "HideEquippedFromJsonPatch", hideEquippedFromJsonPatch);
 
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);

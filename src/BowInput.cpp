@@ -10,6 +10,7 @@
 #include "BowConfig.h"
 #include "BowState.h"
 #include "PCH.h"
+#include "patchs/HiddenItemsPatch.h"
 
 using namespace std::literals;
 
@@ -525,6 +526,10 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
 
     auto removed = BowState::DiffArmorSnapshot(wornBefore, wornAfter);
     BowState::SetPrevExtraEquipped(std::move(removed));
+
+    if (HiddenItemsPatch::IsEnabled()) {
+        BowState::ApplyHiddenItemsPatch(player, equipMgr, HiddenItemsPatch::GetHiddenFormIDs());
+    }
 
     if (!alreadyDrawn) {
         SetWeaponDrawn(player, true);
