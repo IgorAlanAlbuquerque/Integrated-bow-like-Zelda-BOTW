@@ -574,4 +574,66 @@ namespace BowState {
 
         st.prevExtraEquipped.clear();
     }
+
+    inline void AppendPrevExtraEquipped(const ExtraEquippedItem& item) {
+        auto& st = Get();
+        st.prevExtraEquipped.push_back(item);
+    }
+
+    inline bool ContainsPrevExtraEquipped(const ExtraEquippedItem& item) {
+        auto const& st = Get();
+        for (auto const& e : st.prevExtraEquipped) {
+            if (e.base == item.base && e.extra == item.extra) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    inline void ApplyHiddenItemsPatch(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
+                                      const std::vector<RE::FormID>& hiddenFormIDs) {
+        if (!player || !equipMgr || hiddenFormIDs.empty()) {
+            spdlog::info("[IntegratedBow] Hidden patch early return (actor or mgr null or list empty)");
+            return;
+        }
+
+        auto inventory = player->GetInventory([](RE::TESBoundObject&) { return true; });
+
+        for (auto const& [obj, data] : inventory) {
+            auto* armor = obj->As<RE::TESObjectARMO>();
+            if (!armor) {
+                continue;
+            }
+
+            auto const formId = armor->GetFormID();
+            if (!std::binary_search(hiddenFormIDs.begin(), hiddenFormIDs.end(), formId)) {
+                continue;
+            }
+
+            auto const& entryPtr = data.second;
+            auto const* entry = entryPtr.get();
+            if (!entry || !entry->extraLists) {
+                continue;
+            }
+
+            for (auto* extra : *entry->extraLists) {
+                if (!extra) {
+                    continue;
+                }
+
+                if (!extra->HasType(RE::ExtraDataType::kWorn) && !extra->HasType(RE::ExtraDataType::kWornLeft)) {
+                    continue;
+                }
+
+                ExtraEquippedItem item{armor->As<RE::TESBoundObject>(), extra};
+                if (ContainsPrevExtraEquipped(item)) {
+                    continue;
+                }
+
+                equipMgr->UnequipObject(player, item.base, item.extra, 1, nullptr, true, true, true, false, nullptr);
+
+                AppendPrevExtraEquipped(item);
+            }
+        }
+    }
 }

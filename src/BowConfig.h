@@ -24,6 +24,7 @@ namespace IntegratedBow {
         std::atomic<bool> autoDrawEnabled{true};
         std::atomic<float> sheathedDelaySeconds{1.0f};
         bool noLeftBlockPatch = false;
+        bool hideEquippedFromJsonPatch = false;
 
         void Load();
         void Save() const;
