@@ -173,6 +173,8 @@ namespace {
                 equipMgr->EquipObject(player, st.prevLeft.base, st.prevLeft.extra, 1, nullptr, true, true, true, false);
             }
 
+            BowState::ReequipPrevExtraEquipped(player, equipMgr);
+
             if (!st.prevRight.base && !st.prevLeft.base && st.chosenBow.base) {
                 equipMgr->UnequipObject(player, st.chosenBow.base, st.chosenBow.extra, 1, nullptr, true, true, true,
                                         false, nullptr);
@@ -194,6 +196,7 @@ namespace {
         if (!equipMgr) {
             st.isUsingBow = false;
             BowState::ClearPrevWeapons();
+            BowState::ClearPrevExtraEquipped();
             return;
         }
 
@@ -203,6 +206,8 @@ namespace {
         if (st.prevLeft.base) {
             equipMgr->EquipObject(player, st.prevLeft.base, st.prevLeft.extra, 1, nullptr, true, true, true, false);
         }
+
+        BowState::ReequipPrevExtraEquipped(player, equipMgr);
 
         if (!st.prevRight.base && !st.prevLeft.base && st.chosenBow.base) {
             equipMgr->UnequipObject(player, st.chosenBow.base, st.chosenBow.extra, 1, nullptr, true, true, true, false,
@@ -214,6 +219,8 @@ namespace {
         st.prevRight.extra = nullptr;
         st.prevLeft.base = nullptr;
         st.prevLeft.extra = nullptr;
+
+        BowState::ClearPrevExtraEquipped();
     }
 }
 
@@ -487,6 +494,9 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
         return;
     }
 
+    std::vector<BowState::ExtraEquippedItem> wornBefore;
+    BowState::CaptureWornArmorSnapshot(wornBefore);
+
     RE::TESObjectWEAP* bow = st.chosenBow.base ? st.chosenBow.base->As<RE::TESObjectWEAP>() : nullptr;
     RE::ExtraDataList* bowExtra = st.chosenBow.extra;
 
@@ -509,6 +519,12 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
     equipMgr->EquipObject(player, bow, bowExtra, 1, nullptr, true, true, true, false);
     st.isUsingBow = true;
     st.isEquipingBow = false;
+
+    std::vector<BowState::ExtraEquippedItem> wornAfter;
+    BowState::CaptureWornArmorSnapshot(wornAfter);
+
+    auto removed = BowState::DiffArmorSnapshot(wornBefore, wornAfter);
+    BowState::SetPrevExtraEquipped(std::move(removed));
 
     if (!alreadyDrawn) {
         SetWeaponDrawn(player, true);
@@ -546,6 +562,8 @@ void BowInput::IntegratedBowInputHandler::ExitBowMode(RE::PlayerCharacter* playe
         equipMgr->EquipObject(player, st.prevLeft.base, st.prevLeft.extra, 1, nullptr, true, true, true, false);
     }
 
+    BowState::ReequipPrevExtraEquipped(player, equipMgr);
+
     if (!st.prevRight.base && !st.prevLeft.base && st.chosenBow.base) {
         equipMgr->UnequipObject(player, st.chosenBow.base, st.chosenBow.extra, 1, nullptr, true, true, true, false,
                                 nullptr);
@@ -556,6 +574,8 @@ void BowInput::IntegratedBowInputHandler::ExitBowMode(RE::PlayerCharacter* playe
     st.prevRight.extra = nullptr;
     st.prevLeft.base = nullptr;
     st.prevLeft.extra = nullptr;
+
+    BowState::ClearPrevExtraEquipped();
 }
 
 void BowInput::IntegratedBowInputHandler::ScheduleExitBowMode(bool waitForEquip, int delayMs) {
