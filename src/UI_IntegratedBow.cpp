@@ -266,7 +266,7 @@ namespace {
             IntegratedBow::Strings::Get("Item_HideEquippedJsonPatch", "Hide extra equipped items from JSON list");
         const auto& tipJson =
             IntegratedBow::Strings::Get("Item_HideEquippedJsonPatch_Tip",
-                                        "When enabled, items whose FormIDs are listed in patchs/HiddenEquipped.json "
+                                        "When enabled, items whose FormIDs are listed in HiddenEquipped.json "
                                         "will be unequipped while the bow is active and re-equipped on exit.");
 
         if (ImGui::Checkbox(lblJson.c_str(), &hideFromJson)) {
