@@ -41,7 +41,7 @@ namespace {
                     }
                 }
                 if (auto ammo = a_object ? a_object->As<RE::TESAmmo>() : nullptr) {
-                    if (BowInput::IsHotkeyDown()) {
+                    if (BowInput::IsHotkeyDown() && !BowState::IsUsingBow() && !BowState::IsEquipingBow()) {
                         BowState::SetPreferredArrow(ammo);
                         return;
                     }
