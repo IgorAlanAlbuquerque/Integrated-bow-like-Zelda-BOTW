@@ -80,6 +80,9 @@ namespace IntegratedBow {
         const int bow = _getInt(ini, "Bow", "ChosenBowFormID", 0);
         chosenBowFormID.store(static_cast<std::uint32_t>(bow), std::memory_order_relaxed);
 
+        const int arrow = _getInt(ini, "Bow", "PreferredArrowFormID", 0);
+        preferredArrowFormID.store(static_cast<std::uint32_t>(arrow), std::memory_order_relaxed);
+
         {
             bool autoDraw = true;
 
@@ -144,33 +147,25 @@ namespace IntegratedBow {
         }
 
         ini.SetValue("Input", "Mode", modeStr);
-
         const int k1 = keyboardScanCode1.load(std::memory_order_relaxed);
         const int k2 = keyboardScanCode2.load(std::memory_order_relaxed);
         const int k3 = keyboardScanCode3.load(std::memory_order_relaxed);
-
         ini.SetLongValue("Input", "KeyboardScanCode1", static_cast<long>(k1));
         ini.SetLongValue("Input", "KeyboardScanCode2", static_cast<long>(k2));
         ini.SetLongValue("Input", "KeyboardScanCode3", static_cast<long>(k3));
-
         const int gp1 = gamepadButton1.load(std::memory_order_relaxed);
         const int gp2 = gamepadButton2.load(std::memory_order_relaxed);
         const int gp3 = gamepadButton3.load(std::memory_order_relaxed);
-
         ini.SetLongValue("Input", "GamepadButton1", static_cast<long>(gp1));
         ini.SetLongValue("Input", "GamepadButton2", static_cast<long>(gp2));
         ini.SetLongValue("Input", "GamepadButton3", static_cast<long>(gp3));
-
         ini.SetLongValue("Bow", "ChosenBowFormID", static_cast<long>(chosenBowFormID.load(std::memory_order_relaxed)));
-
+        ini.SetLongValue("Bow", "PreferredArrowFormID",
+                         static_cast<long>(preferredArrowFormID.load(std::memory_order_relaxed)));
         ini.SetBoolValue("Input", "AutoDrawEnabled", autoDrawEnabled.load(std::memory_order_relaxed));
         ini.SetDoubleValue("Input", "SheathedDelaySeconds",
                            static_cast<double>(sheathedDelaySeconds.load(std::memory_order_relaxed)));
-
         ini.SetBoolValue("Patches", "NoLeftBlockPatch", noLeftBlockPatch);
-
-        ini.SetBoolValue("Patches", "NoLeftBlockPatch", noLeftBlockPatch);
-
         ini.SetBoolValue("Patches", "HideEquippedFromJsonPatch", hideEquippedFromJsonPatch);
 
         std::error_code ec;

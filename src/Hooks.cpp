@@ -40,9 +40,14 @@ namespace {
                         return;
                     }
                 }
+                if (auto ammo = a_object ? a_object->As<RE::TESAmmo>() : nullptr) {
+                    if (BowInput::IsHotkeyDown()) {
+                        BowState::SetPreferredArrow(ammo);
+                        return;
+                    }
+                }
             }
             if (!func) {
-                spdlog::warn("[IBOW] EquipObjectHook::thunk: func is null, cannot forward call");
                 return;
             }
             func(a_mgr, a_actor, a_object, a_extraData, a_count, a_slot, a_queueEquip, a_forceEquip, a_playSounds,
@@ -70,7 +75,6 @@ namespace {
         }
 
         static void Install() {
-            REL::Relocation<std::uintptr_t> target{REL::RelocationID(67315, 68617)};
             Hook::stl::write_call<PollInputDevicesHook>(REL::RelocationID(67315, 68617),
                                                         REL::VariantOffset(0x7B, 0x7B, 0x81));
         }

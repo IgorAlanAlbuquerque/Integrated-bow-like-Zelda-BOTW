@@ -21,6 +21,8 @@ namespace IntegratedBow {
         std::atomic<int> gamepadButton3{-1};
 
         std::atomic<std::uint32_t> chosenBowFormID{0};
+        std::atomic<std::uint32_t> preferredArrowFormID{0};
+
         std::atomic<bool> autoDrawEnabled{true};
         std::atomic<float> sheathedDelaySeconds{1.0f};
         bool noLeftBlockPatch = false;
