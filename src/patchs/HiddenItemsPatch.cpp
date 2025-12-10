@@ -10,12 +10,7 @@ namespace {
     bool g_enabled = false;
     std::vector<RE::FormID> g_formIds;
 
-    std::filesystem::path GetJsonPath() {
-        auto base = IntegratedBow::GetThisDllDir();
-        auto path = base / "HiddenEquipped.json";
-
-        return path;
-    }
+    std::filesystem::path GetJsonPath() { return IntegratedBow::GetThisDllDir() / "HiddenEquipped.json"; }
 
     void ParseJsonLikeFile(const std::string& text, std::vector<RE::FormID>& out) {
         out.clear();
@@ -24,30 +19,43 @@ namespace {
         std::regex reDec(R"(\b[0-9]{1,10}\b)");
 
         std::smatch m;
-        auto searchStart(text.cbegin());
+        auto searchStart = text.cbegin();
 
-        std::size_t hexCount = 0;
+        const auto tryParse = [](const std::string& s, int base, RE::FormID& outId) {
+            try {
+                unsigned long v = std::stoul(s, nullptr, base);
+                if (v > std::numeric_limits<RE::FormID>::max()) {
+                    return false;
+                }
+                outId = static_cast<RE::FormID>(v);
+                return true;
+            } catch (const std::exception&) {
+                return false;
+            }
+        };
+
         while (std::regex_search(searchStart, text.cend(), m, reHex)) {
-            auto s = m.str();
-            auto id = static_cast<RE::FormID>(std::stoul(s, nullptr, 16));
-            out.push_back(id);
-            ++hexCount;
+            RE::FormID id{};
+
+            if (const auto s = m.str(); tryParse(s, 16, id)) {
+                out.push_back(id);
+            }
 
             searchStart = m.suffix().first;
         }
 
         searchStart = text.cbegin();
-        std::size_t decCount = 0;
         while (std::regex_search(searchStart, text.cend(), m, reDec)) {
-            auto s = m.str();
+            const auto s = m.str();
 
             if (s.size() > 2 && (s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))) {
                 searchStart = m.suffix().first;
                 continue;
             }
-            auto id = static_cast<RE::FormID>(std::stoul(s, nullptr, 10));
-            out.push_back(id);
-            ++decCount;
+
+            if (RE::FormID id{}; tryParse(s, 10, id)) {
+                out.push_back(id);
+            }
 
             searchStart = m.suffix().first;
         }
@@ -64,7 +72,6 @@ void HiddenItemsPatch::LoadConfigFile() {
 
     std::ifstream in(path);
     if (!in) {
-        spdlog::warn("[IBOW] HiddenItemsPatch::LoadConfigFile: failed to open {}", path.string());
         return;
     }
 
