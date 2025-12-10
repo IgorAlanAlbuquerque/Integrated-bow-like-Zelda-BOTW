@@ -59,9 +59,7 @@ namespace {
 
     inline bool IsAutoDrawEnabled() {
         auto const& cfg = IntegratedBow::GetBowConfig();
-        bool v = cfg.autoDrawEnabled.load(std::memory_order_relaxed);
-
-        return v;
+        return cfg.autoDrawEnabled.load(std::memory_order_relaxed);
     }
 
     inline float GetSheathedDelayMs() {
@@ -70,9 +68,7 @@ namespace {
         if (secs < 0.0f) {
             secs = 0.0f;
         }
-        float ms = secs * 1000.0f;
-
-        return ms;
+        return secs * 1000.0f;
     }
 
     void StartAutoAttackDraw() {
@@ -158,78 +154,34 @@ namespace {
         BowState::SetBowEquipped(false);
 
         if (!player) {
-            spdlog::warn("[IBOW] weaponSheatheHelper: no player");
-            return;
-        }
-
-        if (ist.pendingRestoreAfterSheathe.load(std::memory_order_relaxed)) {
-            ist.pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
-
-            auto* equipMgr = RE::ActorEquipManager::GetSingleton();
-            if (!equipMgr) {
-                spdlog::warn("[IBOW] weaponSheatheHelper: no equipMgr on pendingRestore path");
-                return;
-            }
-
-            auto& st = BowState::Get();
-
-            BowState::ReequipPrevExtraEquipped(player, equipMgr);
-
-            if (st.prevRight.base) {
-                equipMgr->EquipObject(player, st.prevRight.base, st.prevRight.extra, 1, nullptr, true, true, true,
-                                      false);
-            }
-            if (st.prevLeft.base) {
-                equipMgr->EquipObject(player, st.prevLeft.base, st.prevLeft.extra, 1, nullptr, true, true, true, false);
-            }
-
-            if (!st.prevRight.base && !st.prevLeft.base && st.chosenBow.base) {
-                equipMgr->UnequipObject(player, st.chosenBow.base, st.chosenBow.extra, 1, nullptr, true, true, true,
-                                        false, nullptr);
-            }
-
-            st.prevRight.base = nullptr;
-            st.prevRight.extra = nullptr;
-            st.prevLeft.base = nullptr;
-            st.prevLeft.extra = nullptr;
-            return;
-        }
-
-        auto& st = BowState::Get();
-        if (!st.isUsingBow) {
             return;
         }
 
         auto* equipMgr = RE::ActorEquipManager::GetSingleton();
         if (!equipMgr) {
-            spdlog::warn("[IBOW] weaponSheatheHelper: no equipMgr on normal path, clearing state");
+            auto& st = BowState::Get();
+            ist.pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
             st.isUsingBow = false;
             BowState::ClearPrevWeapons();
             BowState::ClearPrevExtraEquipped();
+            BowState::ClearPrevAmmo();
             return;
         }
 
-        BowState::ReequipPrevExtraEquipped(player, equipMgr);
+        auto& st = BowState::Get();
 
-        if (st.prevRight.base) {
-            equipMgr->EquipObject(player, st.prevRight.base, st.prevRight.extra, 1, nullptr, true, true, true, false);
-        }
-        if (st.prevLeft.base) {
-            equipMgr->EquipObject(player, st.prevLeft.base, st.prevLeft.extra, 1, nullptr, true, true, true, false);
-        }
+        if (ist.pendingRestoreAfterSheathe.load(std::memory_order_relaxed)) {
+            ist.pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
 
-        if (!st.prevRight.base && !st.prevLeft.base && st.chosenBow.base) {
-            equipMgr->UnequipObject(player, st.chosenBow.base, st.chosenBow.extra, 1, nullptr, true, true, true, false,
-                                    nullptr);
+            BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st, false);
+            return;
         }
 
-        st.isUsingBow = false;
-        st.prevRight.base = nullptr;
-        st.prevRight.extra = nullptr;
-        st.prevLeft.base = nullptr;
-        st.prevLeft.extra = nullptr;
+        if (!st.isUsingBow) {
+            return;
+        }
 
-        BowState::ClearPrevExtraEquipped();
+        BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st, true);
     }
 }
 
@@ -411,7 +363,6 @@ void BowInput::IntegratedBowInputHandler::OnKeyPressed(RE::PlayerCharacter* play
     }
 
     if (!equipMgr) {
-        spdlog::warn("[IBOW] OnKeyPressed: no equipMgr");
         return;
     }
 
@@ -422,7 +373,6 @@ void BowInput::IntegratedBowInputHandler::OnKeyPressed(RE::PlayerCharacter* play
     }
 
     if (RE::TESObjectWEAP const* bow = st.chosenBow.base ? st.chosenBow.base->As<RE::TESObjectWEAP>() : nullptr; !bow) {
-        spdlog::warn("[IBOW] OnKeyPressed: chosenBow.base is not TESObjectWEAP");
         return;
     }
 
@@ -457,7 +407,6 @@ void BowInput::IntegratedBowInputHandler::OnKeyReleased() const {
     }
 
     if (auto const* equipMgr = RE::ActorEquipManager::GetSingleton(); !equipMgr) {
-        spdlog::warn("[IBOW] OnKeyReleased: no equipMgr");
         return;
     }
 
@@ -517,9 +466,11 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
                                                        BowState::IntegratedBowState& st) {
     auto const& ist = BowInput::Globals();
     if (!player || !equipMgr) {
-        spdlog::warn("[IBOW] EnterBowMode: missing player or equipMgr");
         return;
     }
+
+    RE::TESAmmo* currentAmmo = player->GetCurrentAmmo();
+    BowState::SetPrevAmmo(currentAmmo);
 
     std::vector<BowState::ExtraEquippedItem> wornBefore;
     BowState::CaptureWornArmorSnapshot(wornBefore);
@@ -556,6 +507,14 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
     if (HiddenItemsPatch::IsEnabled()) {
         BowState::ApplyHiddenItemsPatch(player, equipMgr, HiddenItemsPatch::GetHiddenFormIDs());
     }
+
+    if (auto* preferred = BowState::GetPreferredArrow()) {
+        auto inv = player->GetInventory([preferred](RE::TESBoundObject& obj) { return &obj == preferred; });
+        if (!inv.empty()) {
+            equipMgr->EquipObject(player, preferred, nullptr, 1, nullptr, true, true, true, false);
+        }
+    }
+
     if (!alreadyDrawn) {
         SetWeaponDrawn(player, true);
     }
@@ -572,7 +531,6 @@ void BowInput::IntegratedBowInputHandler::ExitBowMode(RE::PlayerCharacter* playe
                                                       BowState::IntegratedBowState& st) {
     auto& ist = BowInput::Globals();
     if (!player || !equipMgr) {
-        spdlog::warn("[IBOW] ExitBowMode: missing player or equipMgr");
         return;
     }
 
@@ -580,33 +538,12 @@ void BowInput::IntegratedBowInputHandler::ExitBowMode(RE::PlayerCharacter* playe
         SetWeaponDrawn(player, false);
 
         ist.pendingRestoreAfterSheathe.store(true, std::memory_order_relaxed);
-
         st.isUsingBow = false;
 
         return;
     }
 
-    BowState::ReequipPrevExtraEquipped(player, equipMgr);
-
-    if (st.prevRight.base) {
-        equipMgr->EquipObject(player, st.prevRight.base, st.prevRight.extra, 1, nullptr, true, true, true, false);
-    }
-    if (st.prevLeft.base) {
-        equipMgr->EquipObject(player, st.prevLeft.base, st.prevLeft.extra, 1, nullptr, true, true, true, false);
-    }
-
-    if (!st.prevRight.base && !st.prevLeft.base && st.chosenBow.base) {
-        equipMgr->UnequipObject(player, st.chosenBow.base, st.chosenBow.extra, 1, nullptr, true, true, true, false,
-                                nullptr);
-    }
-
-    st.isUsingBow = false;
-    st.prevRight.base = nullptr;
-    st.prevRight.extra = nullptr;
-    st.prevLeft.base = nullptr;
-    st.prevLeft.extra = nullptr;
-
-    BowState::ClearPrevExtraEquipped();
+    BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st, true);
 }
 
 void BowInput::IntegratedBowInputHandler::ScheduleExitBowMode(bool waitForEquip, int delayMs) {
@@ -670,11 +607,7 @@ void BowInput::IntegratedBowInputHandler::CompleteExit() const {
         if (player) {
             auto& bowSt = BowState::Get();
             ExitBowMode(player, equipMgr, bowSt);
-        } else {
-            spdlog::warn("[IBOW] CompleteExit: no player");
         }
-    } else {
-        spdlog::warn("[IBOW] CompleteExit: no equipMgr");
     }
 
     ResetExitState();
@@ -756,7 +689,6 @@ RE::BSEventNotifyControl BowInput::IntegratedBowInputHandler::ProcessEvent(RE::I
 
 void BowInput::IntegratedBowInputHandler::ScheduleAutoAttackDraw() {
     if (auto const* player = RE::PlayerCharacter::GetSingleton(); !player) {
-        spdlog::warn("[IBOW] ScheduleAutoAttackDraw: no player");
         return;
     }
 
@@ -775,8 +707,6 @@ BowInput::IntegratedBowInputHandler* BowInput::IntegratedBowInputHandler::GetSin
 void BowInput::RegisterInputHandler() {
     if (auto* mgr = RE::BSInputDeviceManager::GetSingleton()) {
         mgr->AddEventSink(IntegratedBowInputHandler::GetSingleton());
-    } else {
-        spdlog::warn("[IBOW] RegisterInputHandler: BSInputDeviceManager not found");
     }
 }
 
@@ -912,7 +842,6 @@ RE::BSEventNotifyControl BowInput::BowAnimEventSink::ProcessEvent(const RE::BSAn
 void BowInput::RegisterAnimEventSink() {
     auto const* player = RE::PlayerCharacter::GetSingleton();
     if (!player) {
-        spdlog::warn("[IBOW] RegisterAnimEventSink: no player");
         return;
     }
 
