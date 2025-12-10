@@ -160,9 +160,11 @@ namespace {
         auto* equipMgr = RE::ActorEquipManager::GetSingleton();
         if (!equipMgr) {
             auto& st = BowState::Get();
+            ist.pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
             st.isUsingBow = false;
             BowState::ClearPrevWeapons();
             BowState::ClearPrevExtraEquipped();
+            BowState::ClearPrevAmmo();
             return;
         }
 

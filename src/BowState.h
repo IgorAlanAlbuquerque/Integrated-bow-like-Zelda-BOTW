@@ -754,14 +754,14 @@ namespace BowState {
                                     nullptr);
         }
 
-        if (auto* prevAmmo = GetPrevAmmo()) {
+        if (auto* prevAmmo = st.prevAmmo) {
             equipMgr->EquipObject(player, prevAmmo, nullptr, 1, nullptr, true, true, true, false);
         } else {
             if (auto* preferred = GetPreferredArrow()) {
                 equipMgr->UnequipObject(player, preferred, nullptr, 1, nullptr, true, true, true, false, nullptr);
             }
         }
-        ClearPrevAmmo();
+        st.prevAmmo = nullptr;
 
         if (clearIsUsingBow) {
             st.isUsingBow = false;
