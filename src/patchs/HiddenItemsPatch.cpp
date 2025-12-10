@@ -12,7 +12,9 @@ namespace {
 
     std::filesystem::path GetJsonPath() {
         auto base = IntegratedBow::GetThisDllDir();
-        return base / "HiddenEquipped.json";
+        auto path = base / "HiddenEquipped.json";
+
+        return path;
     }
 
     void ParseJsonLikeFile(const std::string& text, std::vector<RE::FormID>& out) {
@@ -24,14 +26,18 @@ namespace {
         std::smatch m;
         auto searchStart(text.cbegin());
 
+        std::size_t hexCount = 0;
         while (std::regex_search(searchStart, text.cend(), m, reHex)) {
             auto s = m.str();
             auto id = static_cast<RE::FormID>(std::stoul(s, nullptr, 16));
             out.push_back(id);
+            ++hexCount;
+
             searchStart = m.suffix().first;
         }
 
         searchStart = text.cbegin();
+        std::size_t decCount = 0;
         while (std::regex_search(searchStart, text.cend(), m, reDec)) {
             auto s = m.str();
 
@@ -41,6 +47,8 @@ namespace {
             }
             auto id = static_cast<RE::FormID>(std::stoul(s, nullptr, 10));
             out.push_back(id);
+            ++decCount;
+
             searchStart = m.suffix().first;
         }
     }
@@ -51,25 +59,22 @@ void HiddenItemsPatch::LoadConfigFile() {
 
     auto path = GetJsonPath();
     if (!std::filesystem::exists(path)) {
-        spdlog::info("[IntegratedBow] HiddenEquipped.json not found at {}", path.string());
         return;
     }
 
     std::ifstream in(path);
     if (!in) {
-        spdlog::warn("[IntegratedBow] Failed to open {}", path.string());
+        spdlog::warn("[IBOW] HiddenItemsPatch::LoadConfigFile: failed to open {}", path.string());
         return;
     }
 
     std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
     ParseJsonLikeFile(content, g_formIds);
 
     std::sort(g_formIds.begin(), g_formIds.end());
     g_formIds.erase(std::unique(g_formIds.begin(), g_formIds.end()), g_formIds.end());
-
-    spdlog::info("[IntegratedBow] HiddenEquipped.json loaded with {} formIDs", g_formIds.size());
 }
-
 void HiddenItemsPatch::SetEnabled(bool enabled) { g_enabled = enabled; }
 
 bool HiddenItemsPatch::IsEnabled() { return g_enabled; }

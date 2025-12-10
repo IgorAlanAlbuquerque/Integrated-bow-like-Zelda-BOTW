@@ -97,6 +97,8 @@ namespace BowState {
 
         inline void ApplyChosenTagToInstance(RE::TESBoundObject* base, RE::ExtraDataList* extra) {
             if (!base || !extra) {
+                spdlog::warn("[IBOW] ApplyChosenTagToInstance: base={} extra={} (one is null)",
+                             static_cast<const void*>(base), static_cast<void*>(extra));
                 return;
             }
 
@@ -115,6 +117,7 @@ namespace BowState {
                 cstr = base->GetName();
             }
             if (!cstr || !*cstr) {
+                spdlog::warn("[IBOW] ApplyChosenTagToInstance: no valid name to tag");
                 return;
             }
 
@@ -122,7 +125,6 @@ namespace BowState {
             std::string curName{cstr};
 
             RemoveChosenTagInplace(curName);
-
             StripTemperingSuffixes(curName);
 
             if (!curName.empty()) {
@@ -134,7 +136,8 @@ namespace BowState {
             if (!tdd) {
                 tdd = new RE::ExtraTextDisplayData(base, 1.0f);  // NOSONAR Lifetime é gerenciado pelo engine.
                 if (!tdd) {
-                    spdlog::warn("[IntegratedBow] failed to create ExtraTextDisplayData for chosen bow");
+                    spdlog::warn(
+                        "[IBOW] ApplyChosenTagToInstance: failed to create ExtraTextDisplayData for chosen bow");
                     return;
                 }
                 extra->Add(tdd);
@@ -145,6 +148,8 @@ namespace BowState {
 
         inline void RemoveChosenTagFromInstance(RE::TESBoundObject* base, RE::ExtraDataList* extra) {
             if (!base || !extra) {
+                spdlog::warn("[IBOW] RemoveChosenTagFromInstance: base={} extra={} (one is null)",
+                             static_cast<const void*>(base), static_cast<void*>(extra));
                 return;
             }
 
@@ -160,9 +165,7 @@ namespace BowState {
             }
 
             std::string curName = cstr;
-
             RemoveChosenTagInplace(curName);
-
             StripTemperingSuffixes(curName);
 
             if (curName.empty()) {
@@ -196,13 +199,15 @@ namespace BowState {
 
         inline void EnqueueSyntheticAttack(RE::ButtonEvent* ev) {
             if (!ev) {
+                spdlog::warn("[IBOW] EnqueueSyntheticAttack: ev is null");
                 return;
             }
 
             auto& st = GetSyntheticInputState();
-            std::scoped_lock lk(st.mutex);
-
-            st.pending.push(ev);
+            {
+                std::scoped_lock lk(st.mutex);
+                st.pending.push(ev);
+            }
         }
 
         inline RE::InputEvent* FlushSyntheticInput(RE::InputEvent* head) {
@@ -298,6 +303,7 @@ namespace BowState {
 
             if (bow) {
                 cfg.chosenBowFormID.store(bow->GetFormID(), std::memory_order_relaxed);
+
             } else {
                 cfg.chosenBowFormID.store(0u, std::memory_order_relaxed);
             }
@@ -313,16 +319,19 @@ namespace BowState {
         st.chosenBow.extra = nullptr;
 
         if (!bow) {
+            spdlog::warn("[IBOW] LoadChosenBow: bow is null");
             return;
         }
 
         RE::TESBoundObject* base = bow->As<RE::TESBoundObject>();
         if (!base) {
+            spdlog::warn("[IBOW] LoadChosenBow: bow->As<TESBoundObject> failed");
             return;
         }
 
         auto* player = RE::PlayerCharacter::GetSingleton();
         if (!player) {
+            spdlog::warn("[IBOW] LoadChosenBow: no player");
             return;
         }
 
@@ -388,23 +397,46 @@ namespace BowState {
     inline void SetAutoAttackHeld(bool value) { Get().isAutoAttackHeld = value; }
 
     inline bool EnsureChosenBowInInventory() {
-        auto const& st = Get();
-
-        if (!st.chosenBow.base || !st.chosenBow.extra) {
-            return false;
-        }
+        auto& st = Get();
+        auto& cfg = IntegratedBow::GetBowConfig();
 
         auto* player = RE::PlayerCharacter::GetSingleton();
         if (!player) {
+            spdlog::warn("[IBOW] EnsureChosenBowInInventory: no player");
             return false;
         }
 
+        if (!st.chosenBow.base || !st.chosenBow.extra) {
+            if (const auto formId = cfg.chosenBowFormID.load(std::memory_order_relaxed); formId != 0) {
+                if (auto* bowForm = RE::TESForm::LookupByID<RE::TESObjectWEAP>(formId)) {
+                    LoadChosenBow(bowForm);
+                } else {
+                    spdlog::warn("[IBOW] EnsureChosenBowInInventory: LookupByID failed for FormID=0x{:08X}", formId);
+                }
+            }
+
+            if (!st.chosenBow.base || !st.chosenBow.extra) {
+                return false;
+            }
+        }
+
         auto const* const chosenBase = st.chosenBow.base;
+        if (!chosenBase) {
+            spdlog::warn("[IBOW] EnsureChosenBowInInventory: chosenBase is null after reload");
+            return false;
+        }
 
         auto inventory = player->GetInventory([chosenBase](RE::TESBoundObject& obj) { return &obj == chosenBase; });
 
+        constexpr const char* kChosenTag = " (chosen)";
+        constexpr std::size_t kTagLen = 9;
+
+        RE::ExtraDataList const* foundExact = nullptr;
+        RE::ExtraDataList* foundTagged = nullptr;
+        RE::ExtraDataList* foundAny = nullptr;
+
         for (auto const& [obj, data] : inventory) {
-            if (obj != st.chosenBow.base) {
+            if (obj != chosenBase) {
                 continue;
             }
 
@@ -414,11 +446,65 @@ namespace BowState {
                 continue;
             }
 
-            for (auto const* extra : *entry->extraLists) {
+            for (auto* extra : *entry->extraLists) {
+                if (!extra) {
+                    continue;
+                }
+
                 if (extra == st.chosenBow.extra) {
-                    return true;
+                    foundExact = extra;
+                    break;
+                }
+
+                if (!foundAny) {
+                    foundAny = extra;
+                }
+
+                const char* dispName = extra->GetDisplayName(obj);
+                if (!dispName || !*dispName) {
+                    continue;
+                }
+
+                const std::size_t len = std::strlen(dispName);
+                if (len < kTagLen) {
+                    continue;
+                }
+
+                if (std::memcmp(dispName + (len - kTagLen), kChosenTag, kTagLen) == 0) {
+                    foundTagged = extra;
                 }
             }
+
+            if (foundExact) {
+                break;
+            }
+        }
+
+        if (foundExact) {
+            return true;
+        }
+
+        if (foundTagged) {
+            st.chosenBow.extra = foundTagged;
+
+            return true;
+        }
+
+        if (foundAny) {
+            st.chosenBow.extra = foundAny;
+
+            BowState::detail::ApplyChosenTagToInstance(st.chosenBow.base, st.chosenBow.extra);
+
+            if (auto const* bow = st.chosenBow.base->As<RE::TESObjectWEAP>()) {
+                cfg.chosenBowFormID.store(bow->GetFormID(), std::memory_order_relaxed);
+
+            } else {
+                cfg.chosenBowFormID.store(0u, std::memory_order_relaxed);
+                spdlog::warn("[IBOW] EnsureChosenBowInInventory: chosen base is not TESObjectWEAP, clearing FormID");
+            }
+            cfg.Save();
+
+            return true;
         }
 
         ClearChosenBow();
@@ -482,7 +568,9 @@ namespace BowState {
 
     inline bool IsBowEquipped() {
         auto const& st = Get();
-        return st.bowEquipped.load(std::memory_order_relaxed);
+        auto v = st.bowEquipped.load(std::memory_order_relaxed);
+
+        return v;
     }
 
     inline void SetWaitingAutoAfterEquip(bool v) {
@@ -492,11 +580,14 @@ namespace BowState {
 
     inline bool IsWaitingAutoAfterEquip() {
         auto const& st = Get();
-        return st.waitingAutoAttackAfterEquip.load(std::memory_order_relaxed);
+        auto v = st.waitingAutoAttackAfterEquip.load(std::memory_order_relaxed);
+
+        return v;
     }
 
     inline void SetPrevExtraEquipped(std::vector<ExtraEquippedItem>&& items) {
         auto& st = Get();
+
         st.prevExtraEquipped = std::move(items);
     }
 
@@ -504,6 +595,7 @@ namespace BowState {
 
     inline void ClearPrevExtraEquipped() {
         auto& st = Get();
+
         st.prevExtraEquipped.clear();
     }
 
@@ -512,10 +604,12 @@ namespace BowState {
 
         auto* player = RE::PlayerCharacter::GetSingleton();
         if (!player) {
+            spdlog::warn("[IBOW] CaptureWornArmorSnapshot: no player");
             return;
         }
 
         auto inventory = player->GetInventory([](RE::TESBoundObject&) { return true; });
+        std::size_t count = 0;
 
         for (auto const& [obj, data] : inventory) {
             auto* armor = obj->As<RE::TESObjectARMO>();
@@ -536,6 +630,7 @@ namespace BowState {
 
                 if (extra->HasType(RE::ExtraDataType::kWorn) || extra->HasType(RE::ExtraDataType::kWornLeft)) {
                     out.push_back(ExtraEquippedItem{armor->As<RE::TESBoundObject>(), extra});
+                    ++count;
                 }
             }
         }
@@ -556,19 +651,26 @@ namespace BowState {
                 removed.push_back(b);
             }
         }
+
         return removed;
     }
 
     inline void ReequipPrevExtraEquipped(RE::Actor* actor, RE::ActorEquipManager* equipMgr) {
         if (!actor || !equipMgr) {
+            spdlog::warn("[IBOW] ReequipPrevExtraEquipped: actor={} equipMgr={}", static_cast<void*>(actor),
+                         static_cast<void*>(equipMgr));
             return;
         }
 
         auto& st = Get();
+
         for (auto const& item : st.prevExtraEquipped) {
             if (!item.base) {
+                spdlog::warn("[IBOW] ReequipPrevExtraEquipped: item.base is null extra={}",
+                             static_cast<void*>(item.extra));
                 continue;
             }
+
             equipMgr->EquipObject(actor, item.base, item.extra, 1, nullptr, true, true, true, false);
         }
 
@@ -593,7 +695,6 @@ namespace BowState {
     inline void ApplyHiddenItemsPatch(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
                                       const std::vector<RE::FormID>& hiddenFormIDs) {
         if (!player || !equipMgr || hiddenFormIDs.empty()) {
-            spdlog::info("[IntegratedBow] Hidden patch early return (actor or mgr null or list empty)");
             return;
         }
 
@@ -605,8 +706,8 @@ namespace BowState {
                 continue;
             }
 
-            auto const formId = armor->GetFormID();
-            if (!std::binary_search(hiddenFormIDs.begin(), hiddenFormIDs.end(), formId)) {
+            if (auto const formId = armor->GetFormID();
+                !std::binary_search(hiddenFormIDs.begin(), hiddenFormIDs.end(), formId)) {
                 continue;
             }
 
