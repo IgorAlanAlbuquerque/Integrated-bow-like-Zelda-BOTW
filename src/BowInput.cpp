@@ -77,6 +77,7 @@ namespace {
 
         ist.attackHold.active.store(true, std::memory_order_relaxed);
         ist.attackHold.secs.store(0.0f, std::memory_order_relaxed);
+        ist.sheathRequestedByPlayer.store(false, std::memory_order_relaxed);
 
         auto* ev = MakeAttackButtonEvent(1.0f, 0.0f);
         DispatchAttackButtonEvent(ev);
@@ -172,16 +173,19 @@ namespace {
 
         if (ist.pendingRestoreAfterSheathe.load(std::memory_order_relaxed)) {
             ist.pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
+            BowState::SetBowEquipped(false);
 
             BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st, false);
             return;
         }
 
-        if (!st.isUsingBow) {
+        if (ist.sheathRequestedByPlayer.exchange(false, std::memory_order_relaxed)) {
+            if (st.isUsingBow) {
+                BowState::SetBowEquipped(false);
+                BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st, true);
+            }
             return;
         }
-
-        BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st, true);
     }
 }
 
@@ -630,6 +634,12 @@ void BowInput::IntegratedBowInputHandler::ProcessButtonEvent(const RE::ButtonEve
                                                              RE::PlayerCharacter* player) const {
     if (!button->IsDown() && !button->IsUp()) {
         return;
+    }
+
+    auto& ist = BowInput::Globals();
+
+    if (const auto& ue = button->QUserEvent(); ue == "Ready Weapon"sv && button->IsDown()) {
+        ist.sheathRequestedByPlayer.store(true, std::memory_order_relaxed);
     }
 
     auto dev = button->GetDevice();

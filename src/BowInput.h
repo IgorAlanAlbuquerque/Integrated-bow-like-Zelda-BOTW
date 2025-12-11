@@ -45,6 +45,7 @@ namespace BowInput {
         ModeState mode;
         ExitState exit;
         std::atomic_bool pendingRestoreAfterSheathe{false};
+        std::atomic_bool sheathRequestedByPlayer{false};
     };
 
     GlobalState& Globals() noexcept;
