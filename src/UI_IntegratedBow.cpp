@@ -13,6 +13,9 @@
 using IntegratedBow::BowMode;
 using IntegratedBow::GetBowConfig;
 
+namespace ImGui = ImGuiMCP;
+using ImGuiMCP::ImVec2;
+
 namespace {
     bool g_pending = false;  // NOSONAR: estado global
     using enum IntegratedBow::BowMode;
