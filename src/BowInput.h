@@ -58,12 +58,14 @@ namespace BowInput {
     void RequestGamepadCapture();
     int PollCapturedGamepadButton();
     bool IsHotkeyDown();
+    void HandleAnimEvent(const RE::BSAnimationGraphEvent* ev, RE::BSTEventSource<RE::BSAnimationGraphEvent>* src);
 
     class IntegratedBowInputHandler : public RE::BSTEventSink<RE::InputEvent*> {
     public:
         static IntegratedBowInputHandler* GetSingleton();
         RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const* a_events,
                                               RE::BSTEventSource<RE::InputEvent*>*) override;
+        static void ForceImmediateExit();
 
     private:
         static void ScheduleExitBowMode(bool waitForEquip, int delayMs);
@@ -92,13 +94,5 @@ namespace BowInput {
         void ProcessInputEvents(RE::InputEvent* const* a_events, RE::PlayerCharacter* player) const;
         float CalculateDeltaTime() const;
         void ResetExitState() const;
-    };
-
-    class BowAnimEventSink : public RE::BSTEventSink<RE::BSAnimationGraphEvent> {
-    public:
-        static BowAnimEventSink* GetSingleton();
-
-        RE::BSEventNotifyControl ProcessEvent(const RE::BSAnimationGraphEvent* a_event,
-                                              RE::BSTEventSource<RE::BSAnimationGraphEvent>* a_source) override;
     };
 }
