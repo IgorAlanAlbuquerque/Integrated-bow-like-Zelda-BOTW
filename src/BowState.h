@@ -61,6 +61,10 @@ namespace BowState {
         std::atomic_bool bowEquipped{false};
         std::vector<ExtraEquippedItem> prevExtraEquipped{};
         RE::TESAmmo* prevAmmo{nullptr};
+        bool pendingFinalizeExtras{false};
+        float pendingFinalizeExtrasTimer{0.0f};
+        RE::TESBoundObject* pendingDesiredRight{nullptr};
+        RE::TESBoundObject* pendingDesiredLeft{nullptr};
     };
 
     IntegratedBowState& Get();
@@ -107,6 +111,13 @@ namespace BowState {
         st.waitingAutoAttackAfterEquip.store(false, std::memory_order_relaxed);
         st.bowEquipped.store(false, std::memory_order_relaxed);
         st.prevAmmo = nullptr;
+
+        st.pendingFinalizeExtras = false;
+        st.pendingFinalizeExtrasTimer = 0.0f;
+        st.pendingDesiredRight = nullptr;
+        st.pendingDesiredLeft = nullptr;
+
+        st.prevExtraEquipped.clear();
     }
     inline void SetBowEquipped(bool v) {
         auto& st = Get();
@@ -148,4 +159,5 @@ namespace BowState {
     void SetPreferredArrow(RE::TESAmmo* ammo);
     void RestorePrevWeaponsAndAmmo(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
                                    IntegratedBowState& st);
+    void UpdateDeferredFinalize(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr, float dt);
 }

@@ -75,10 +75,21 @@ namespace {
             return;
         }
     }
+
+    bool IsHandReady(RE::PlayerCharacter* player, RE::TESBoundObject* desired, bool leftHand) {
+        if (!player) return false;
+
+        auto* curForm = player->GetEquippedObject(leftHand);
+        auto const* curBase = curForm ? curForm->As<RE::TESBoundObject>() : nullptr;
+
+        if (!desired) {
+            return curBase == nullptr;
+        }
+        return curBase == desired;
+    }
 }
 
 bool BowState::detail::IsTemperingTag(std::string_view inside) {
-    spdlog::info("[IBOW][STATE][NAME] IsTemperingTag enter inside='{}' len={}", inside, inside.size());
     for (auto q : kQualityTags) {
         if (inside.size() != q.size()) {
             continue;
@@ -94,12 +105,10 @@ bool BowState::detail::IsTemperingTag(std::string_view inside) {
         }
 
         if (match) {
-            spdlog::info("[IBOW][STATE][NAME] IsTemperingTag MATCH tag='{}' for inside='{}'", q, inside);
             return true;
         }
     }
 
-    spdlog::info("[IBOW][STATE][NAME] IsTemperingTag no match for inside='{}'", inside);
     return false;
 }
 
@@ -112,7 +121,6 @@ void BowState::detail::TrimTrailingSpaces(std::string& s) {
 void BowState::detail::RemoveChosenTagInplace(std::string& s) {
     constexpr std::string_view chosenTag{" (chosen)"};
 
-    spdlog::info("[IBOW][STATE][NAME] RemoveChosenTagInplace enter s='{}'", s);
     for (;;) {
         auto pos = s.find(chosenTag);
         if (pos == std::string::npos) {
@@ -123,12 +131,9 @@ void BowState::detail::RemoveChosenTagInplace(std::string& s) {
     }
 
     TrimTrailingSpaces(s);
-
-    spdlog::info("[IBOW][STATE][NAME] RemoveChosenTagInplace done result='{}'", s);
 }
 
 void BowState::detail::StripTemperingSuffixes(std::string& name) {
-    spdlog::info("[IBOW][STATE][NAME] StripTemperingSuffixes enter name='{}'", name);
     TrimTrailingSpaces(name);
 
     for (;;) {
@@ -158,26 +163,19 @@ void BowState::detail::StripTemperingSuffixes(std::string& name) {
             break;
         }
 
-        spdlog::info("[IBOW][STATE][NAME] StripTemperingSuffixes stripping suffix '({})' at open={} from name='{}'",
-                     inside, open, name);
-
         name.erase(open - 1);
         TrimTrailingSpaces(name);
     }
 
     TrimTrailingSpaces(name);
-    spdlog::info("[IBOW][STATE][NAME] StripTemperingSuffixes done result='{}'", name);
 }
 
 void BowState::detail::ApplyChosenTagToInstance(RE::TESBoundObject* base, RE::ExtraDataList* extra) {
     if (!base || !extra) {
-        spdlog::warn("[IBOW][STATE][CHOSEN_TAG] ApplyChosenTagToInstance base/extra null base={} extra={}", (void*)base,
-                     (void*)extra);
         return;
     }
 
     auto* tdd = extra->GetExtraTextDisplayData();
-    spdlog::info("[IBOW][STATE][CHOSEN_TAG] extra->GetExtraTextDisplayData() tdd={}", (void*)tdd);
 
     const char* cstr = nullptr;
 
@@ -187,22 +185,19 @@ void BowState::detail::ApplyChosenTagToInstance(RE::TESBoundObject* base, RE::Ex
 
     if (!cstr || !*cstr) {
         cstr = extra->GetDisplayName(base);
-        spdlog::info("[IBOW][STATE][CHOSEN_TAG] source=tdd displayName='{}'", cstr ? cstr : "");
     }
 
     if (!cstr || !*cstr) {
         cstr = base->GetName();
-        spdlog::info("[IBOW][STATE][CHOSEN_TAG] source=base->GetName '{}'", cstr ? cstr : "");
     }
 
     if (!cstr || !*cstr) {
-        spdlog::warn("[IBOW][STATE][CHOSEN_TAG] no usable name source; abort");
         return;
     }
 
     constexpr std::string_view chosenTag{" (chosen)"};
     std::string curName{cstr};
-    spdlog::info("[IBOW][STATE][CHOSEN_TAG] current name before cleanup='{}'", curName);
+
     RemoveChosenTagInplace(curName);
     StripTemperingSuffixes(curName);
 
@@ -212,59 +207,44 @@ void BowState::detail::ApplyChosenTagToInstance(RE::TESBoundObject* base, RE::Ex
     } else {
         curName = "(chosen)";
     }
-    spdlog::info("[IBOW][STATE][CHOSEN_TAG] cleaned='{}' finalWithTag='{}'", cleanedName, curName);
 
     if (!tdd) {
-        spdlog::info("[IBOW][STATE][CHOSEN_TAG] no tdd -> creating ExtraTextDisplayData");
         tdd = new RE::ExtraTextDisplayData(base, 1.0f);  // NOSONAR Lifetime é gerenciado pelo engine.
         if (!tdd) {
-            spdlog::warn("[IBOW][STATE][CHOSEN_TAG] new ExtraTextDisplayData failed -> abort");
             return;
         }
         extra->Add(tdd);
-        spdlog::info("[IBOW][STATE][CHOSEN_TAG] created tdd={} and added to extra", (void*)tdd);
     }
 
     tdd->SetName(curName.c_str());
-    spdlog::info("[IBOW][STATE][CHOSEN_TAG] SetName done -> '{}'", curName);
 }
 
 void BowState::detail::RemoveChosenTagFromInstance(RE::TESBoundObject* base, RE::ExtraDataList* extra) {
     if (!base || !extra) {
-        spdlog::warn("[IBOW][STATE][CHOSEN_TAG] RemoveChosenTagFromInstance base/extra null base={} extra={}",
-                     (void*)base, (void*)extra);
         return;
     }
 
     auto* tdd = extra->GetExtraTextDisplayData();
-    spdlog::info("[IBOW][STATE][CHOSEN_TAG] extra->GetExtraTextDisplayData() tdd={}", (void*)tdd);
 
     if (!tdd) {
-        spdlog::info("[IBOW][STATE][CHOSEN_TAG] no tdd -> nothing to remove");
         return;
     }
 
     const char* cstr = tdd->displayName.c_str();
-    spdlog::info("[IBOW][STATE][CHOSEN_TAG] tdd displayName='{}'", cstr ? cstr : "");
 
     if (!cstr || !*cstr) {
-        spdlog::info("[IBOW][STATE][CHOSEN_TAG] empty tdd name -> removing TextDisplayData extra");
         extra->RemoveByType(RE::ExtraDataType::kTextDisplayData);
         return;
     }
 
     std::string curName = cstr;
-    spdlog::info("[IBOW][STATE][CHOSEN_TAG] current name before cleanup='{}'", curName);
 
     RemoveChosenTagInplace(curName);
     StripTemperingSuffixes(curName);
-    spdlog::info("[IBOW][STATE][CHOSEN_TAG] cleaned result='{}'", curName);
 
     if (curName.empty()) {
-        spdlog::info("[IBOW][STATE][CHOSEN_TAG] cleaned empty -> removing TextDisplayData extra");
         extra->RemoveByType(RE::ExtraDataType::kTextDisplayData);
     } else {
-        spdlog::info("[IBOW][STATE][CHOSEN_TAG] SetName -> '{}'", curName);
         tdd->SetName(curName.c_str());
     }
 }
@@ -280,7 +260,6 @@ RE::ButtonEvent* BowState::detail::MakeAttackButtonEvent(float value, float held
 
 void BowState::detail::EnqueueSyntheticAttack(RE::ButtonEvent* ev) {
     if (!ev) {
-        spdlog::info("[IBOW][STATE][SYN] EnqueueSyntheticAttack ev=null -> return");
         return;
     }
 
@@ -288,7 +267,6 @@ void BowState::detail::EnqueueSyntheticAttack(RE::ButtonEvent* ev) {
     {
         std::scoped_lock lk(st.mutex);
         st.pending.push(ev);
-        spdlog::info("[IBOW][STATE][SYN] Enqueued attack event ev={} pendingSize={}", (void*)ev, st.pending.size());
     }
 }
 
@@ -302,11 +280,8 @@ RE::InputEvent* BowState::detail::FlushSyntheticInput(RE::InputEvent* head) {
     }
 
     if (local.empty()) {
-        spdlog::info("[IBOW][STATE][SYN] FlushSyntheticInput: nothing to flush. head={}", (void*)head);
         return head;
     }
-
-    spdlog::info("[IBOW][STATE][SYN] FlushSyntheticInput: flushing N={} head={}", local.size(), (void*)head);
 
     RE::InputEvent* synthHead = nullptr;
     RE::InputEvent* synthTail = nullptr;
@@ -328,16 +303,12 @@ RE::InputEvent* BowState::detail::FlushSyntheticInput(RE::InputEvent* head) {
             synthTail = ev;
         }
     }
-    spdlog::info("[IBOW][STATE][SYN] FlushSyntheticInput: built synth list synthHead={} synthTail={}", (void*)synthHead,
-                 (void*)synthTail);
 
     if (!head) {
-        spdlog::info("[IBOW][STATE][SYN] FlushSyntheticInput: returning synthHead only");
         return synthHead;
     }
 
     synthTail->next = head;
-    spdlog::info("[IBOW][STATE][SYN] FlushSyntheticInput: returning synthHead (prepended before head)");
 
     return synthHead;
 }
@@ -355,8 +326,6 @@ BowState::IntegratedBowState& BowState::Get() {
 }
 
 void BowState::LoadChosenBow(RE::TESObjectWEAP* bow) {
-    spdlog::info("[IBOW][STATE][CHOSEN] LoadChosenBow enter bow={} formID=0x{:08X}", (void*)bow,
-                 bow ? bow->GetFormID() : 0u);
     auto& st = Get();
 
     st.chosenBow.base = nullptr;
@@ -394,7 +363,6 @@ void BowState::LoadChosenBow(RE::TESObjectWEAP* bow) {
         if (!entry) {
             continue;
         }
-        spdlog::info("[IBOW][STATE][CHOSEN] Checking entry for item {}.", (void*)obj);
 
         if (!entry || !entry->extraLists) {
             continue;
@@ -417,8 +385,6 @@ void BowState::LoadChosenBow(RE::TESObjectWEAP* bow) {
 
             if (std::memcmp(dispName + (len - kTagLen), kChosenTag, kTagLen) == 0) {
                 st.chosenBow.extra = extra;
-                spdlog::info("[IBOW][STATE][CHOSEN] LoadChosenBow FOUND tagged extra={} base={}", (void*)extra,
-                             (void*)base);
 
                 return;
             }
@@ -444,46 +410,28 @@ void BowState::ClearChosenBow() {
 bool BowState::EnsureChosenBowInInventory() {
     auto& st = Get();
     auto& cfg = IntegratedBow::GetBowConfig();
-    spdlog::info("[IBOW][STATE][CHOSEN] EnsureChosenBowInInventory enter base={} extra={} cfgFormID=0x{:08X}",
-                 (void*)st.chosenBow.base, (void*)st.chosenBow.extra,
-                 cfg.chosenBowFormID.load(std::memory_order_relaxed));
 
     auto* player = RE::PlayerCharacter::GetSingleton();
     if (!player) {
-        spdlog::warn("[IBOW][STATE][CHOSEN] No player found. Returning false.");
-
         return false;
     }
 
     if (!st.chosenBow.base) {
-        spdlog::info(
-            "[IBOW][STATE][CHOSEN] Chosen bow base not set (base={} extra={}). Trying to load from config "
-            "(FormID=0x{:08X}).",
-            (void*)st.chosenBow.base, (void*)st.chosenBow.extra, cfg.chosenBowFormID.load(std::memory_order_relaxed));
-
         if (const auto formId = cfg.chosenBowFormID.load(std::memory_order_relaxed); formId != 0) {
-            spdlog::info("[IBOW][STATE][CHOSEN] Loading chosen bow with FormID 0x{:08X}", formId);
-
             if (auto* bowForm = RE::TESForm::LookupByID<RE::TESObjectWEAP>(formId)) {
                 LoadChosenBow(bowForm);
             }
         }
 
         if (!st.chosenBow.base) {
-            spdlog::warn("[IBOW][STATE][CHOSEN] Failed to load chosen bow BASE from config. Returning false.");
-
             return false;
         }
     }
 
     auto const* const chosenBase = st.chosenBow.base;
     if (!chosenBase) {
-        spdlog::warn("[IBOW][STATE][CHOSEN] Chosen bow base is null. Returning false.");
-
         return false;
     }
-
-    spdlog::info("[IBOW][STATE][CHOSEN] Searching for chosen bow in inventory...");
 
     auto inventory = player->GetInventory([chosenBase](RE::TESBoundObject& obj) { return &obj == chosenBase; });
 
@@ -511,10 +459,9 @@ bool BowState::EnsureChosenBowInInventory() {
         }
 
         if (!entry->extraLists || entry->extraLists->empty()) {
-            spdlog::info("[IBOW][STATE][CHOSEN] entry has no extraLists -> skipping");
             continue;
         }
-        spdlog::info("[IBOW][STATE][CHOSEN] Checking entry for item {}.", (void*)obj);
+
         for (auto* extra : *entry->extraLists) {
             if (!extra) {
                 continue;
@@ -528,11 +475,9 @@ bool BowState::EnsureChosenBowInInventory() {
             if (!dispName || !*dispName) {
                 continue;
             }
-            spdlog::info("[IBOW][STATE][CHOSEN] Checking extra item with displayName='{}'", dispName);
 
             if (st.chosenBow.extra && extra == st.chosenBow.extra) {
                 foundExact = extra;
-                spdlog::info("[IBOW][STATE][CHOSEN] Found exact match for chosen bow extra.");
 
                 break;
             }
@@ -540,44 +485,34 @@ bool BowState::EnsureChosenBowInInventory() {
             const std::size_t len = std::strlen(dispName);
             if (len >= kTagLen && std::memcmp(dispName + (len - kTagLen), kChosenTag, kTagLen) == 0) {
                 foundTagged = extra;
-                spdlog::info("[IBOW][STATE][CHOSEN] Found tagged match for chosen bow extra (tagged with '{}').",
-                             kChosenTag);
             }
         }
 
         if (foundExact) {
-            spdlog::info("[IBOW][STATE][CHOSEN] Exact match found, breaking loop.");
-
             break;
         }
     }
 
     if (foundExact) {
-        spdlog::info("[IBOW][STATE][CHOSEN] Exact match found in inventory. Returning true.");
-
         return true;
     }
 
     if (foundTagged) {
         st.chosenBow.extra = foundTagged;
-        spdlog::info("[IBOW][STATE][CHOSEN] Tagged match found, updating extra. Returning true.");
 
         return true;
     }
 
     if (foundAnyExtra) {
         st.chosenBow.extra = foundAnyExtra;
-        spdlog::info("[IBOW][STATE][CHOSEN] Any match found, updating extra and applying chosen tag.");
 
         BowState::detail::ApplyChosenTagToInstance(st.chosenBow.base, st.chosenBow.extra);
 
         if (auto const* bow = st.chosenBow.base->As<RE::TESObjectWEAP>()) {
             cfg.chosenBowFormID.store(bow->GetFormID(), std::memory_order_relaxed);
-            spdlog::info("[IBOW][STATE][CHOSEN] Storing new bow FormID 0x{:08X}", bow->GetFormID());
 
         } else {
             cfg.chosenBowFormID.store(0u, std::memory_order_relaxed);
-            spdlog::warn("[IBOW][STATE][CHOSEN] No valid bow found. Setting FormID to 0.");
         }
 
         cfg.Save();
@@ -585,9 +520,6 @@ bool BowState::EnsureChosenBowInInventory() {
     }
 
     if (anyFound) {
-        spdlog::info(
-            "[IBOW][STATE][CHOSEN] Chosen bow base found in inventory but no matching extra data. "
-            "Clearing chosen bow.");
         st.chosenBow.extra = nullptr;
 
         if (auto const* bow = st.chosenBow.base ? st.chosenBow.base->As<RE::TESObjectWEAP>() : nullptr) {
@@ -599,7 +531,6 @@ bool BowState::EnsureChosenBowInInventory() {
     }
 
     ClearChosenBow();
-    spdlog::info("[IBOW][STATE][CHOSEN] No valid bow found in inventory, clearing chosen bow. Returning false.");
 
     return false;
 }
@@ -609,52 +540,31 @@ void BowState::SetChosenBow(RE::TESObjectWEAP* bow, RE::ExtraDataList* extra) {
     auto& st = Get();
 
     const auto newBase = bow ? bow->As<RE::TESBoundObject>() : nullptr;
-    spdlog::info(
-        "[IBOW][STATE][CHOSEN] SetChosenBow enter bow={} newBase={} extra={} curBase={} curExtra={} "
-        "curFormID=0x{:08X}",
-        (void*)bow, (void*)newBase, (void*)extra, (void*)st.chosenBow.base, (void*)st.chosenBow.extra,
-        cfg.chosenBowFormID.load(std::memory_order_relaxed));
 
     if (RE::TESBoundObject const* base = newBase; st.chosenBow.base == base && st.chosenBow.extra == extra) {
-        spdlog::info("[IBOW][STATE][CHOSEN] toggling OFF (same instance). Removing tag and clearing.");
-
         if (auto* live = ResolveLiveExtra(st.chosenBow.base, st.chosenBow.extra)) {
             detail::RemoveChosenTagFromInstance(st.chosenBow.base, live);
         } else {
-            spdlog::warn(
-                "[IBOW][STATE][CHOSEN] prev extra is not in current extraLists -> skip pointer remove; scan tagged");
-
             RemoveChosenTagFromAnyTaggedInstance(st.chosenBow.base);
         }
         st.chosenBow.base = nullptr;
         st.chosenBow.extra = nullptr;
         cfg.chosenBowFormID.store(0u, std::memory_order_relaxed);
         cfg.Save();
-        spdlog::info("[IBOW][STATE][CHOSEN] toggling OFF done. cfgFormID=0x{:08X}",
-                     cfg.chosenBowFormID.load(std::memory_order_relaxed));
 
         return;
     }
 
     if (st.chosenBow.base && st.chosenBow.extra) {
-        spdlog::info("[IBOW][STATE][CHOSEN] removing previous chosen tag prevBase={} prevExtra={}",
-                     (void*)st.chosenBow.base, (void*)st.chosenBow.extra);
-
         if (auto* live = ResolveLiveExtra(st.chosenBow.base, st.chosenBow.extra)) {
             detail::RemoveChosenTagFromInstance(st.chosenBow.base, live);
         } else {
-            spdlog::warn(
-                "[IBOW][STATE][CHOSEN] prev extra is not in current extraLists -> skip pointer remove; scan tagged");
-
             RemoveChosenTagFromAnyTaggedInstance(st.chosenBow.base);
         }
     }
 
     st.chosenBow.base = newBase;
     st.chosenBow.extra = extra;
-
-    spdlog::info("[IBOW][STATE][CHOSEN] setting ON newBase={} newExtra={} (apply tag)", (void*)st.chosenBow.base,
-                 (void*)st.chosenBow.extra);
 
     const auto newId = bow ? bow->GetFormID() : 0u;
     cfg.chosenBowFormID.store(newId, std::memory_order_relaxed);
@@ -663,25 +573,19 @@ void BowState::SetChosenBow(RE::TESObjectWEAP* bow, RE::ExtraDataList* extra) {
         EnsureChosenBowInInventory();
     }
     detail::ApplyChosenTagToInstance(st.chosenBow.base, st.chosenBow.extra);
-    spdlog::info("[IBOW][STATE][CHOSEN] setting ON done. cfgFormID=0x{:08X}", newId);
 }
 
 RE::ExtraDataList* BowState::FindAnyInstanceExtraForBase(RE::TESBoundObject* base) {
     if (!base) {
-        spdlog::warn("[IBOW][STATE][FIND_EXTRA] base=null -> return null");
-
         return nullptr;
     }
 
     auto* player = RE::PlayerCharacter::GetSingleton();
     if (!player) {
-        spdlog::warn("[IBOW][STATE][FIND_EXTRA] player=null -> return null");
-
         return nullptr;
     }
 
     auto inventory = player->GetInventory([base](RE::TESBoundObject& obj) { return &obj == base; });
-    spdlog::info("[IBOW][STATE][FIND_EXTRA] inventory filtered count={}", inventory.size());
 
     for (auto const& [obj, data] : inventory) {
         if (obj != base) {
@@ -691,13 +595,9 @@ RE::ExtraDataList* BowState::FindAnyInstanceExtraForBase(RE::TESBoundObject* bas
         auto const& entryPtr = data.second;
         auto const* entry = entryPtr.get();
         if (!entry) {
-            spdlog::info("[IBOW][STATE][FIND_EXTRA] entry=null for obj={} (unexpected) -> continue", (void*)obj);
-
             continue;
         }
         if (!entry->extraLists) {
-            spdlog::info("[IBOW][STATE][FIND_EXTRA] entry has no extraLists for obj={} -> continue", (void*)obj);
-
             continue;
         }
 
@@ -706,61 +606,37 @@ RE::ExtraDataList* BowState::FindAnyInstanceExtraForBase(RE::TESBoundObject* bas
                 continue;
             }
 
-            spdlog::info("[IBOW][STATE][FIND_EXTRA] FOUND extra={} (returning)", (void*)extra);
-
             return extra;
         }
     }
-
-    spdlog::info("[IBOW][STATE][FIND_EXTRA] no extra found for base id=0x{:08X} -> return null",
-                 base ? base->GetFormID() : 0u);
 
     return nullptr;
 }
 
 void BowState::CaptureWornArmorSnapshot(std::vector<ExtraEquippedItem>& out) {
-    spdlog::info("[IBOW][STATE][SNAPSHOT] CaptureWornArmorSnapshot enter");
-
     out.clear();
 
     auto* player = RE::PlayerCharacter::GetSingleton();
     if (!player) {
-        spdlog::warn("[IBOW][STATE][SNAPSHOT] player=null, returning");
-
         return;
     }
 
-    spdlog::info("[IBOW][STATE][SNAPSHOT] player found, fetching inventory...");
-
     auto inventory = player->GetInventory([](RE::TESBoundObject&) { return true; });
-    spdlog::info("[IBOW][STATE][SNAPSHOT] Inventory fetched, item count={}", inventory.size());
 
     for (auto const& [obj, data] : inventory) {
         auto* armor = obj->As<RE::TESObjectARMO>();
         if (!armor) {
-            spdlog::info("[IBOW][STATE][SNAPSHOT] not an armor item, skipping");
-
             continue;
         }
-
-        const auto armorId = armor->GetFormID();
-        spdlog::info("[IBOW][STATE][SNAPSHOT] armor item found, id=0x{:08X} name='{}'", armorId,
-                     armor->GetName() ? armor->GetName() : "");
 
         auto const& entryPtr = data.second;
         auto const* entry = entryPtr.get();
         if (!entry || !entry->extraLists) {
-            spdlog::info("[IBOW][STATE][SNAPSHOT] armor entry or extraLists null for armor=0x{:08X}, skipping",
-                         armorId);
-
             continue;
         }
-        spdlog::info("[IBOW][STATE][SNAPSHOT] scanning extraLists for armor=0x{:08X}", armorId);
 
         for (auto* extra : *entry->extraLists) {
             if (!extra) {
-                spdlog::info("[IBOW][STATE][SNAPSHOT] extra=null, skipping");
-
                 continue;
             }
 
@@ -768,20 +644,14 @@ void BowState::CaptureWornArmorSnapshot(std::vector<ExtraEquippedItem>& out) {
             const bool wornLeft = extra->HasType(RE::ExtraDataType::kWornLeft);
 
             if (worn || wornLeft) {
-                spdlog::info("[IBOW][STATE][SNAPSHOT] armor=0x{:08X} has extra worn/wornLeft. Adding to snapshot.",
-                             armorId);
-
                 out.push_back(ExtraEquippedItem{armor->As<RE::TESBoundObject>(), extra});
             }
         }
     }
-    spdlog::info("[IBOW][STATE][SNAPSHOT] Snapshot captured with {} worn items.", out.size());
 }
 
 std::vector<BowState::ExtraEquippedItem> BowState::DiffArmorSnapshot(const std::vector<ExtraEquippedItem>& before,
                                                                      const std::vector<ExtraEquippedItem>& after) {
-    spdlog::info("[IBOW][STATE][DIFF] DiffArmorSnapshot enter beforeCount={} afterCount={}", before.size(),
-                 after.size());
     std::vector<ExtraEquippedItem> removed;
 
     for (auto const& b : before) {
@@ -795,12 +665,10 @@ std::vector<BowState::ExtraEquippedItem> BowState::DiffArmorSnapshot(const std::
         }
 
         if (!stillWorn) {
-            spdlog::info("[IBOW][STATE][DIFF] removed base={} extra={} id=0x{:08X} name='{}'", (void*)b.base,
-                         (void*)b.extra, b.base ? b.base->GetFormID() : 0u, b.base ? b.base->GetName() : "");
             removed.push_back(b);
         }
     }
-    spdlog::info("[IBOW][STATE][DIFF] DiffArmorSnapshot done removedCount={}", removed.size());
+
     return removed;
 }
 
@@ -816,7 +684,13 @@ void BowState::ReequipPrevExtraEquipped(RE::Actor* actor, RE::ActorEquipManager*
             continue;
         }
 
-        equipMgr->EquipObject(actor, item.base, item.extra, 1, nullptr, true, true, true, false);
+        const bool isArmor = (item.base->GetFormType() == RE::FormType::Armor);
+
+        const bool queue = false;
+        const bool force = !isArmor;
+        const bool applyNow = isArmor;
+
+        equipMgr->EquipObject(actor, item.base, item.extra, 1, nullptr, queue, force, true, applyNow);
     }
 
     st.prevExtraEquipped.clear();
@@ -835,21 +709,14 @@ bool BowState::ContainsPrevExtraEquipped(const ExtraEquippedItem& item) {
 
 void BowState::ApplyHiddenItemsPatch(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
                                      const std::vector<RE::FormID>& hiddenFormIDs) {
-    spdlog::info("[IBOW][STATE][HIDDEN] enter player={} equipMgr={} hiddenCount={}", (void*)player, (void*)equipMgr,
-                 hiddenFormIDs.size());
     if (!player || !equipMgr) {
-        spdlog::warn("[IBOW][STATE][HIDDEN] player/equipMgr null -> return");
-
         return;
     }
     if (hiddenFormIDs.empty()) {
-        spdlog::info("[IBOW][STATE][HIDDEN] hiddenFormIDs empty -> return");
-
         return;
     }
 
     auto inventory = player->GetInventory([](RE::TESBoundObject&) { return true; });
-    spdlog::info("[IBOW][STATE][HIDDEN] inventory total entries={}", inventory.size());
 
     for (auto const& [obj, data] : inventory) {
         auto* armor = obj->As<RE::TESObjectARMO>();
@@ -857,18 +724,13 @@ void BowState::ApplyHiddenItemsPatch(RE::PlayerCharacter* player, RE::ActorEquip
             continue;
         }
 
-        const auto armorId = armor->GetFormID();
-        if (!std::ranges::binary_search(hiddenFormIDs, armorId)) {
+        if (const auto armorId = armor->GetFormID(); !std::ranges::binary_search(hiddenFormIDs, armorId)) {
             continue;
         }
-
-        spdlog::info("[IBOW][STATE][HIDDEN] matched armor id=0x{:08X} name='{}' obj={}", armorId,
-                     armor->GetName() ? armor->GetName() : "", (void*)armor);
 
         auto const& entryPtr = data.second;
         auto const* entry = entryPtr.get();
         if (!entry || !entry->extraLists) {
-            spdlog::info("[IBOW][STATE][HIDDEN] armor entry missing extraLists -> continue (id=0x{:08X})", armorId);
             continue;
         }
 
@@ -878,42 +740,30 @@ void BowState::ApplyHiddenItemsPatch(RE::PlayerCharacter* player, RE::ActorEquip
             }
 
             const bool worn = extra->HasType(RE::ExtraDataType::kWorn);
-            const bool wornLeft = extra->HasType(RE::ExtraDataType::kWornLeft);
-
-            if (!worn && !wornLeft) {
+            if (const bool wornLeft = extra->HasType(RE::ExtraDataType::kWornLeft); !worn && !wornLeft) {
                 continue;
             }
 
             ExtraEquippedItem item{armor->As<RE::TESBoundObject>(), extra};
             if (ContainsPrevExtraEquipped(item)) {
-                spdlog::info("[IBOW][STATE][HIDDEN] already in prevExtraEquipped -> skip armor=0x{:08X} extra={}",
-                             armorId, (void*)extra);
                 continue;
             }
-
-            spdlog::info("[IBOW][STATE][HIDDEN] Unequip hidden armor id=0x{:08X} extra={} worn={} wornLeft={}", armorId,
-                         (void*)extra, worn, wornLeft);
 
             equipMgr->UnequipObject(player, item.base, item.extra, 1, nullptr, true, true, true, false, nullptr);
             AppendPrevExtraEquipped(item);
         }
     }
-    spdlog::info("[IBOW][STATE][HIDDEN] done prevExtraEquippedCount={}", Get().prevExtraEquipped.size());
 }
 
 RE::TESAmmo* BowState::GetPreferredArrow() {
     auto const& cfg = IntegratedBow::GetBowConfig();
     const auto formId = cfg.preferredArrowFormID.load(std::memory_order_relaxed);
-    spdlog::info("[IBOW][STATE][ARROW] GetPreferredArrow stored formId=0x{:08X}", formId);
-    if (formId == 0) {
-        spdlog::info("[IBOW][STATE][ARROW] GetPreferredArrow formId=0 -> return null");
 
+    if (formId == 0) {
         return nullptr;
     }
 
     auto* ammo = RE::TESForm::LookupByID<RE::TESAmmo>(formId);
-    spdlog::info("[IBOW][STATE][ARROW] GetPreferredArrow LookupByID 0x{:08X} -> ammo={} name='{}'", formId, (void*)ammo,
-                 ammo && ammo->GetName() ? ammo->GetName() : "");
 
     return ammo;
 }
@@ -921,27 +771,14 @@ RE::TESAmmo* BowState::GetPreferredArrow() {
 void BowState::SetPreferredArrow(RE::TESAmmo* ammo) {
     auto& cfg = IntegratedBow::GetBowConfig();
     const auto newId = ammo ? ammo->GetFormID() : 0u;
-    spdlog::info("[IBOW][STATE][ARROW] SetPreferredArrow enter ammo={} newId=0x{:08X} name='{}'", (void*)ammo, newId,
-                 ammo && ammo->GetName() ? ammo->GetName() : "");
 
     cfg.preferredArrowFormID.store(newId, std::memory_order_relaxed);
     cfg.Save();
-    spdlog::info("[IBOW][STATE][ARROW] SetPreferredArrow saved preferredArrowFormID=0x{:08X}", newId);
 }
 
 void BowState::RestorePrevWeaponsAndAmmo(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
                                          IntegratedBowState& st) {
-    spdlog::info(
-        "[IBOW][STATE][RESTORE] enter player={} equipMgr={} | "
-        "prevR(base={},extra={},id=0x{:08X}) prevL(base={},extra={},id=0x{:08X}) "
-        "chosen(base={},extra={}) prevAmmo={} usingBow={} equipingBow={}",
-        (void*)player, (void*)equipMgr, (void*)st.prevRight.base, (void*)st.prevRight.extra, st.prevRightFormID,
-        (void*)st.prevLeft.base, (void*)st.prevLeft.extra, st.prevLeftFormID, (void*)st.chosenBow.base,
-        (void*)st.chosenBow.extra, (void*)st.prevAmmo, st.isUsingBow, st.isEquipingBow);
-
     if (!player || !equipMgr) {
-        spdlog::warn("[IBOW][STATE][RESTORE] player/equipMgr null -> return");
-
         return;
     }
 
@@ -949,18 +786,12 @@ void BowState::RestorePrevWeaponsAndAmmo(RE::PlayerCharacter* player, RE::ActorE
 
     RE::TESBoundObject* rightBase = st.prevRight.base;
     RE::ExtraDataList* rightExtra = st.prevRight.extra;
-    spdlog::info("[IBOW][STATE][RESTORE] RIGHT initial base={} extra={} id=0x{:08X}", (void*)rightBase,
-                 (void*)rightExtra, rightBase ? rightBase->GetFormID() : 0u);
 
     if (!rightBase && st.prevRightFormID != 0) {
-        spdlog::info("[IBOW][STATE][RESTORE] RIGHT base missing -> LookupByID 0x{:08X}", st.prevRightFormID);
-
         if (auto* form = RE::TESForm::LookupByID<RE::TESBoundObject>(st.prevRightFormID)) {
             rightBase = form;
-            spdlog::info("[IBOW][STATE][RESTORE] RIGHT LookupByID OK form={} id=0x{:08X} name='{}'", (void*)form,
-                         form->GetFormID(), form->GetName() ? form->GetName() : "");
+
             rightExtra = FindAnyInstanceExtraForBase(form);
-            spdlog::info("[IBOW][STATE][RESTORE] RIGHT FindAnyInstanceExtraForBase -> extra={}", (void*)rightExtra);
         }
     }
 
@@ -969,35 +800,23 @@ void BowState::RestorePrevWeaponsAndAmmo(RE::PlayerCharacter* player, RE::ActorE
             if (auto* live = ResolveLiveExtra(rightBase, rightExtra)) {
                 rightExtra = live;
             } else {
-                spdlog::warn("[IBOW][STATE][RESTORE] RIGHT stale extra={} for base={} -> fallback lookup",
-                             (void*)rightExtra, (void*)rightBase);
                 rightExtra = FindAnyInstanceExtraForBase(rightBase);
-                spdlog::info("[IBOW][STATE][RESTORE] RIGHT fallback FindAnyInstanceExtraForBase -> extra={}",
-                             (void*)rightExtra);
             }
         }
 
         const bool queue = (rightExtra == nullptr);
-        spdlog::info("[IBOW][STATE][RESTORE] RIGHT EquipObject base={} extra={} queue={} id=0x{:08X} name='{}'",
-                     (void*)rightBase, (void*)rightExtra, queue, rightBase->GetFormID(),
-                     rightBase->GetName() ? rightBase->GetName() : "");
 
         equipMgr->EquipObject(player, rightBase, rightExtra, 1, nullptr, queue, true, true, false);
     }
 
     RE::TESBoundObject* leftBase = st.prevLeft.base;
     RE::ExtraDataList* leftExtra = st.prevLeft.extra;
-    spdlog::info("[IBOW][STATE][RESTORE] LEFT initial base={} extra={} id=0x{:08X}", (void*)leftBase, (void*)leftExtra,
-                 leftBase ? leftBase->GetFormID() : 0u);
 
     if (!leftBase && st.prevLeftFormID != 0) {
-        spdlog::info("[IBOW][STATE][RESTORE] LEFT base missing -> LookupByID 0x{:08X}", st.prevLeftFormID);
         if (auto* form = RE::TESForm::LookupByID<RE::TESBoundObject>(st.prevLeftFormID)) {
             leftBase = form;
-            spdlog::info("[IBOW][STATE][RESTORE] LEFT LookupByID OK form={} id=0x{:08X} name='{}'", (void*)form,
-                         form->GetFormID(), form->GetName() ? form->GetName() : "");
+
             leftExtra = FindAnyInstanceExtraForBase(form);
-            spdlog::info("[IBOW][STATE][RESTORE] LEFT FindAnyInstanceExtraForBase -> extra={}", (void*)leftExtra);
         }
     }
 
@@ -1006,58 +825,66 @@ void BowState::RestorePrevWeaponsAndAmmo(RE::PlayerCharacter* player, RE::ActorE
             if (auto* live = ResolveLiveExtra(leftBase, leftExtra)) {
                 leftExtra = live;
             } else {
-                spdlog::warn("[IBOW][STATE][RESTORE] LEFT stale extra={} for base={} -> fallback lookup",
-                             (void*)leftExtra, (void*)leftBase);
-
                 leftExtra = FindAnyInstanceExtraForBase(leftBase);
-                spdlog::info("[IBOW][STATE][RESTORE] LEFT fallback FindAnyInstanceExtraForBase -> extra={}",
-                             (void*)leftExtra);
             }
         }
 
         const bool queue = (leftExtra == nullptr);
 
-        spdlog::info("[IBOW][STATE][RESTORE] LEFT EquipObject base={} extra={} queue={} id=0x{:08X} name='{}'",
-                     (void*)leftBase, (void*)leftExtra, queue, leftBase->GetFormID(),
-                     leftBase->GetName() ? leftBase->GetName() : "");
-
         equipMgr->EquipObject(player, leftBase, leftExtra, 1, nullptr, queue, true, true, false);
     }
 
     if (!rightBase && !leftBase && st.chosenBow.base) {
-        spdlog::info(
-            "[IBOW][STATE][RESTORE] both hands empty -> Unequip chosen bow base={} extra={} id=0x{:08X} name='{}'",
-            (void*)st.chosenBow.base, (void*)st.chosenBow.extra, st.chosenBow.base->GetFormID(),
-            st.chosenBow.base->GetName() ? st.chosenBow.base->GetName() : "");
-
         equipMgr->UnequipObject(player, st.chosenBow.base, st.chosenBow.extra, 1, nullptr, true, true, true, false,
                                 nullptr);
     }
 
     if (auto* prevAmmo = st.prevAmmo) {
-        spdlog::info("[IBOW][STATE][RESTORE] restoring prevAmmo ptr={} id=0x{:08X} name='{}'", (void*)prevAmmo,
-                     prevAmmo->GetFormID(), prevAmmo->GetName() ? prevAmmo->GetName() : "");
-
         equipMgr->EquipObject(player, prevAmmo, nullptr, 1, nullptr, true, true, true, false);
     } else {
         auto* preferred = GetPreferredArrow();
         if (preferred) {
-            spdlog::info("[IBOW][STATE][RESTORE] no prevAmmo -> Unequip preferredArrow ptr={} id=0x{:08X} name='{}'",
-                         (void*)preferred, preferred->GetFormID(), preferred->GetName() ? preferred->GetName() : "");
             equipMgr->UnequipObject(player, preferred, nullptr, 1, nullptr, true, true, true, false, nullptr);
         }
     }
-    spdlog::info("[IBOW][STATE][RESTORE] ReequipPrevExtraEquipped begin (count={})", st.prevExtraEquipped.size());
-    ReequipPrevExtraEquipped(player, equipMgr);
-    spdlog::info("[IBOW][STATE][RESTORE] ReequipPrevExtraEquipped done (count={})", st.prevExtraEquipped.size());
 
     st.prevAmmo = nullptr;
     st.isUsingBow = false;
 
-    spdlog::info("[IBOW][STATE][RESTORE] clearing prev weapons/extras");
+    if (st.prevExtraEquipped.empty()) {
+        ClearPrevWeapons();
+        ClearPrevExtraEquipped();
+        return;
+    }
+
+    st.pendingFinalizeExtras = true;
+    st.pendingFinalizeExtrasTimer = 0.0f;
+    st.pendingDesiredRight = st.prevRight.base;
+    st.pendingDesiredLeft = st.prevLeft.base;
+
     ClearPrevWeapons();
+}
+
+void BowState::UpdateDeferredFinalize(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr, float dt) {
+    auto& st = Get();
+    if (!st.pendingFinalizeExtras) {
+        return;
+    }
+
+    st.pendingFinalizeExtrasTimer += dt;
+
+    const bool rightOK = IsHandReady(player, st.pendingDesiredRight, false);
+    const bool leftOK = IsHandReady(player, st.pendingDesiredLeft, true);
+    if (const bool timedOut = (st.pendingFinalizeExtrasTimer >= 2.0f); !timedOut && !(rightOK && leftOK)) {
+        return;
+    }
+
+    ReequipPrevExtraEquipped(player, equipMgr);
+
+    st.pendingFinalizeExtras = false;
+    st.pendingFinalizeExtrasTimer = 0.0f;
+    st.pendingDesiredRight = nullptr;
+    st.pendingDesiredLeft = nullptr;
+
     ClearPrevExtraEquipped();
-    spdlog::info("[IBOW][STATE][RESTORE] done. usingBow={} equipingBow={} bowEquipped={} waitingAutoAfterEquip={}",
-                 st.isUsingBow, st.isEquipingBow, st.bowEquipped.load(std::memory_order_relaxed),
-                 st.waitingAutoAttackAfterEquip.load(std::memory_order_relaxed));
 }
