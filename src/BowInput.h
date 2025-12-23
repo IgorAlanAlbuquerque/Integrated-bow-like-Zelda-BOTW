@@ -1,5 +1,7 @@
 #pragma once
+#include <array>
 #include <atomic>
+#include <cstdint>
 
 namespace BowInput {
     inline constexpr int kMaxComboKeys = 3;
@@ -45,24 +47,31 @@ namespace BowInput {
         ModeState mode;
         ExitState exit;
         std::atomic_bool pendingRestoreAfterSheathe{false};
+        std::atomic_bool sheathRequestedByPlayer{false};
+        std::atomic_bool allowUnequip{true};
+        std::atomic<std::uint64_t> allowUnequipReenableMs{0};
+        std::atomic<std::uint64_t> lastHotkeyPressMs{0};
     };
 
     GlobalState& Globals() noexcept;
     void RegisterInputHandler();
-    void RegisterAnimEventSink();
-
     void SetMode(int mode);
     void SetKeyScanCodes(int k1, int k2, int k3);
     void SetGamepadButtons(int b1, int b2, int b3);
     void RequestGamepadCapture();
     int PollCapturedGamepadButton();
     bool IsHotkeyDown();
+    void HandleAnimEvent(const RE::BSAnimationGraphEvent* ev, RE::BSTEventSource<RE::BSAnimationGraphEvent>* src);
+    bool IsUnequipAllowed() noexcept;
+    void BlockUnequipForMs(std::uint64_t ms) noexcept;
+    void ForceAllowUnequip() noexcept;
 
     class IntegratedBowInputHandler : public RE::BSTEventSink<RE::InputEvent*> {
     public:
         static IntegratedBowInputHandler* GetSingleton();
         RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const* a_events,
                                               RE::BSTEventSource<RE::InputEvent*>*) override;
+        static void ForceImmediateExit();
 
     private:
         static void ScheduleExitBowMode(bool waitForEquip, int delayMs);
@@ -91,13 +100,5 @@ namespace BowInput {
         void ProcessInputEvents(RE::InputEvent* const* a_events, RE::PlayerCharacter* player) const;
         float CalculateDeltaTime() const;
         void ResetExitState() const;
-    };
-
-    class BowAnimEventSink : public RE::BSTEventSink<RE::BSAnimationGraphEvent> {
-    public:
-        static BowAnimEventSink* GetSingleton();
-
-        RE::BSEventNotifyControl ProcessEvent(const RE::BSAnimationGraphEvent* a_event,
-                                              RE::BSTEventSource<RE::BSAnimationGraphEvent>* a_source) override;
     };
 }

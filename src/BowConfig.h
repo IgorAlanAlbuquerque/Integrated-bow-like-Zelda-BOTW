@@ -27,6 +27,7 @@ namespace IntegratedBow {
         std::atomic<float> sheathedDelaySeconds{1.0f};
         bool noLeftBlockPatch = false;
         bool hideEquippedFromJsonPatch = false;
+        bool BlockUnequip = false;
 
         void Load();
         void Save() const;

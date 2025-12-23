@@ -23,6 +23,7 @@ add_commonlibsse_plugin(${PROJECT_NAME}
     src/UI_IntegratedBow.cpp
     src/patchs/UnMapBlock.cpp
     src/patchs/HiddenItemsPatch.cpp
+    src/BowState.cpp
 )
 
 target_include_directories(${PROJECT_NAME}

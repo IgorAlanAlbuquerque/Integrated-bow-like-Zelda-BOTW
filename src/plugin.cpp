@@ -40,9 +40,15 @@ namespace {
         if (message->type == SKSE::MessagingInterface::kDataLoaded) {
             Hooks::Install_Hooks();
             IntegratedBow_UI::Register();
+            HiddenItemsPatch::LoadConfigFile();
+        }
+        if (message->type == SKSE::MessagingInterface::kPostLoadGame ||
+            message->type == SKSE::MessagingInterface::kNewGame) {
+            auto const& cfg = IntegratedBow::GetBowConfig();
+            UnMapBlock::SetNoLeftBlockPatch(cfg.noLeftBlockPatch);
+            HiddenItemsPatch::SetEnabled(cfg.hideEquippedFromJsonPatch);
         }
         if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
-            BowInput::RegisterAnimEventSink();
             auto const& cfg = IntegratedBow::GetBowConfig();
 
             if (const auto bowID = cfg.chosenBowFormID.load(std::memory_order_relaxed); bowID != 0) {
@@ -53,8 +59,6 @@ namespace {
                     spdlog::warn("IntegratedBow: saved bow FormID 0x{:08X} not found, ignoring", bowID);
                 }
             }
-            UnMapBlock::SetNoLeftBlockPatch(cfg.noLeftBlockPatch);
-            HiddenItemsPatch::SetEnabled(cfg.hideEquippedFromJsonPatch);
         }
     }
 }
@@ -66,8 +70,6 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
     auto& cfg = IntegratedBow::GetBowConfig();
     cfg.Load();
     IntegratedBow::Strings::Load();
-
-    HiddenItemsPatch::LoadConfigFile();
 
     BowInput::SetMode(std::to_underlying(cfg.mode.load(std::memory_order_relaxed)));
     BowInput::SetKeyScanCodes(cfg.keyboardScanCode1.load(std::memory_order_relaxed),
