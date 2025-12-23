@@ -146,6 +146,6 @@ namespace BowState {
                                const std::vector<RE::FormID>& hiddenFormIDs);
     RE::TESAmmo* GetPreferredArrow();
     void SetPreferredArrow(RE::TESAmmo* ammo);
-    void RestorePrevWeaponsAndAmmo(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr, IntegratedBowState& st,
-                                   bool clearIsUsingBow);
+    void RestorePrevWeaponsAndAmmo(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
+                                   IntegratedBowState& st);
 }

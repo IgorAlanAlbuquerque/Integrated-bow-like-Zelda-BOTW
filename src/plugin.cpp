@@ -40,6 +40,7 @@ namespace {
         if (message->type == SKSE::MessagingInterface::kDataLoaded) {
             Hooks::Install_Hooks();
             IntegratedBow_UI::Register();
+            HiddenItemsPatch::LoadConfigFile();
         }
         if (message->type == SKSE::MessagingInterface::kPostLoadGame ||
             message->type == SKSE::MessagingInterface::kNewGame) {
@@ -69,8 +70,6 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
     auto& cfg = IntegratedBow::GetBowConfig();
     cfg.Load();
     IntegratedBow::Strings::Load();
-
-    HiddenItemsPatch::LoadConfigFile();
 
     BowInput::SetMode(std::to_underlying(cfg.mode.load(std::memory_order_relaxed)));
     BowInput::SetKeyScanCodes(cfg.keyboardScanCode1.load(std::memory_order_relaxed),

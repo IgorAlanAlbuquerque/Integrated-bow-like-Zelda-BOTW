@@ -248,6 +248,7 @@ namespace {
     void DrawPatchesSection(IntegratedBow::BowConfig& cfg, bool& dirty) {
         bool noLeftBlock = cfg.noLeftBlockPatch;
         bool hideFromJson = cfg.hideEquippedFromJsonPatch;
+        bool blockUnequip = cfg.BlockUnequip;
 
         const auto& lbl = IntegratedBow::Strings::Get("Item_NoLeftBlockPatch", "Disable vanilla left-hand block (LT)");
         const auto& tip = IntegratedBow::Strings::Get(
@@ -279,6 +280,23 @@ namespace {
 
         ImGui::SameLine();
         ImGui::TextDisabled("%s", tipJson.c_str());
+
+        ImGui::Separator();
+
+        const auto& lblBlockUnequip =
+            IntegratedBow::Strings::Get("Item_BlockUnequipPatch", "Block unequip of bow/ammo during bow-mode entry");
+        const auto& tipBlockUnequip = IntegratedBow::Strings::Get(
+            "Item_BlockUnequipPatch_Tip",
+            "When enabled, the plugin will temporarily block UnequipObject calls for bows/crossbows and ammo while "
+            "entering bow mode. This can mitigate external interference that forces the bow to be unequipped.");
+
+        if (ImGui::Checkbox(lblBlockUnequip.c_str(), &blockUnequip)) {
+            cfg.BlockUnequip = blockUnequip;
+            dirty = true;
+        }
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", tipBlockUnequip.c_str());
     }
 }
 

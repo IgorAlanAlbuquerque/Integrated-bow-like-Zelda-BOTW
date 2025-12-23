@@ -1,5 +1,7 @@
 #pragma once
+#include <array>
 #include <atomic>
+#include <cstdint>
 
 namespace BowInput {
     inline constexpr int kMaxComboKeys = 3;
@@ -46,12 +48,13 @@ namespace BowInput {
         ExitState exit;
         std::atomic_bool pendingRestoreAfterSheathe{false};
         std::atomic_bool sheathRequestedByPlayer{false};
+        std::atomic_bool allowUnequip{true};
+        std::atomic<std::uint64_t> allowUnequipReenableMs{0};
+        std::atomic<std::uint64_t> lastHotkeyPressMs{0};
     };
 
     GlobalState& Globals() noexcept;
     void RegisterInputHandler();
-    void RegisterAnimEventSink();
-
     void SetMode(int mode);
     void SetKeyScanCodes(int k1, int k2, int k3);
     void SetGamepadButtons(int b1, int b2, int b3);
@@ -59,6 +62,9 @@ namespace BowInput {
     int PollCapturedGamepadButton();
     bool IsHotkeyDown();
     void HandleAnimEvent(const RE::BSAnimationGraphEvent* ev, RE::BSTEventSource<RE::BSAnimationGraphEvent>* src);
+    bool IsUnequipAllowed() noexcept;
+    void BlockUnequipForMs(std::uint64_t ms) noexcept;
+    void ForceAllowUnequip() noexcept;
 
     class IntegratedBowInputHandler : public RE::BSTEventSink<RE::InputEvent*> {
     public:

@@ -1,22 +1,46 @@
 #include "HiddenItemsPatch.h"
 
+#include <fmt/format.h>
+
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <regex>
 #include <string>
+#include <string_view>
 
 #include "../PCH.h"
 
 namespace {
-    bool g_enabled = false;
-    std::vector<RE::FormID> g_formIds;
+    bool g_enabled = false;             // NOSONAR
+    std::vector<RE::FormID> g_formIds;  // NOSONAR
 
     std::filesystem::path GetJsonPath() { return IntegratedBow::GetThisDllDir() / "HiddenEquipped.json"; }
 
-    void ParseJsonLikeFile(const std::string& text, std::vector<RE::FormID>& out) {
+    bool TryParseFormID(std::string_view s, RE::FormID& outId) {
+        try {
+            int base = 10;
+            if (s.size() > 2 && (s[0] == '0') && (s[1] == 'x' || s[1] == 'X')) {
+                base = 16;
+                s.remove_prefix(2);
+            }
+            if (s.empty()) {
+                return false;
+            }
+            unsigned long v = std::stoul(std::string{s}, nullptr, base);
+            if (v > std::numeric_limits<RE::FormID>::max()) {
+                return false;
+            }
+            outId = static_cast<RE::FormID>(v);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    void ParseLegacyJsonLikeFile(const std::string& text, std::vector<RE::FormID>& out) {
         out.clear();
-        spdlog::info("[HiddenItemsPatch][ParseJson] parsing text with size={}", text.size());
 
         std::regex reHex(R"(0x[0-9A-Fa-f]+)");
         std::regex reDec(R"(\b[0-9]{1,10}\b)");
@@ -24,33 +48,14 @@ namespace {
         std::smatch m;
         auto searchStart = text.cbegin();
 
-        const auto tryParse = [](const std::string& s, int base, RE::FormID& outId) {
-            try {
-                unsigned long v = std::stoul(s, nullptr, base);
-                if (v > std::numeric_limits<RE::FormID>::max()) {
-                    spdlog::warn("[HiddenItemsPatch][ParseJson] value={} exceeds max FormID", v);
-                    return false;
-                }
-                outId = static_cast<RE::FormID>(v);
-                return true;
-            } catch (const std::exception&) {
-                spdlog::warn("[HiddenItemsPatch][ParseJson] invalid value '{}' for base={} -> skipping", s, base);
-                return false;
-            }
-        };
-
-        // Parse Hexadecimal
         while (std::regex_search(searchStart, text.cend(), m, reHex)) {
             RE::FormID id{};
-            const auto s = m.str();
-            if (tryParse(s, 16, id)) {
+            if (const auto s = m.str(); TryParseFormID(s, id)) {
                 out.push_back(id);
-                spdlog::info("[HiddenItemsPatch][ParseJson] found hex ID={} (0x{:08X})", s, id);
             }
             searchStart = m.suffix().first;
         }
 
-        // Parse Decimal
         searchStart = text.cbegin();
         while (std::regex_search(searchStart, text.cend(), m, reDec)) {
             const auto s = m.str();
@@ -59,59 +64,75 @@ namespace {
                 continue;
             }
 
-            if (RE::FormID id{}; tryParse(s, 10, id)) {
+            if (RE::FormID id{}; TryParseFormID(s, id)) {
                 out.push_back(id);
-                spdlog::info("[HiddenItemsPatch][ParseJson] found decimal ID={} (0x{:08X})", s, id);
             }
             searchStart = m.suffix().first;
         }
+    }
 
-        spdlog::info("[HiddenItemsPatch][ParseJson] parsing complete, total IDs found={}", out.size());
+    bool ParsePluginLocalIdsJson(const std::string& text, std::vector<RE::FormID>& out) {
+        out.clear();
+
+        auto* dh = RE::TESDataHandler::GetSingleton();
+        if (!dh) {
+            return false;
+        }
+
+        std::regex reObj(R"(\{[^}]*\"plugin\"\s*:\s*\"([^\"]+)\"[^}]*\"id\"\s*:\s*\"?((?:0x)?[0-9A-Fa-f]+)\"?[^}]*\})");
+
+        std::smatch m;
+        auto it = text.cbegin();
+        bool any = false;
+
+        while (std::regex_search(it, text.cend(), m, reObj)) {
+            any = true;
+            const std::string plugin = m[1].str();
+            const std::string idStr = m[2].str();
+
+            RE::FormID local{};
+            if (!TryParseFormID(idStr, local)) {
+                it = m.suffix().first;
+                continue;
+            }
+
+            const auto runtime = dh->LookupFormID(local, plugin);
+            if (runtime != 0) {
+                out.push_back(runtime);
+            }
+
+            it = m.suffix().first;
+        }
+
+        return any;
     }
 }
 
 void HiddenItemsPatch::LoadConfigFile() {
     g_formIds.clear();
-    spdlog::info("[HiddenItemsPatch][LoadConfig] LoadConfigFile start");
 
-    auto path = GetJsonPath();
-    spdlog::info("[HiddenItemsPatch][LoadConfig] config file path: {}", path.string());
+    const auto path = GetJsonPath();
 
     if (!std::filesystem::exists(path)) {
-        spdlog::info("[HiddenItemsPatch][LoadConfig] file does not exist at path {}", path.string());
         return;
     }
 
     std::ifstream in(path);
     if (!in) {
-        spdlog::error("[HiddenItemsPatch][LoadConfig] failed to open file at {}", path.string());
         return;
     }
 
     std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    spdlog::info("[HiddenItemsPatch][LoadConfig] loaded file content size={}", content.size());
 
-    ParseJsonLikeFile(content, g_formIds);
-
-    spdlog::info("[HiddenItemsPatch][LoadConfig] parsed file, g_formIds size={}", g_formIds.size());
+    const bool usedNew = ParsePluginLocalIdsJson(content, g_formIds);
+    if (!usedNew) {
+        ParseLegacyJsonLikeFile(content, g_formIds);
+    }
 
     std::sort(g_formIds.begin(), g_formIds.end());
-    spdlog::info("[HiddenItemsPatch][LoadConfig] sorted g_formIds");
-
     g_formIds.erase(std::unique(g_formIds.begin(), g_formIds.end()), g_formIds.end());
-    spdlog::info("[HiddenItemsPatch][LoadConfig] removed duplicates, final size={}", g_formIds.size());
-}
-void HiddenItemsPatch::SetEnabled(bool enabled) {
-    g_enabled = enabled;
-    spdlog::info("[HiddenItemsPatch][SetEnabled] g_enabled set to {}", g_enabled);
 }
 
-bool HiddenItemsPatch::IsEnabled() {
-    spdlog::info("[HiddenItemsPatch][IsEnabled] returning {}", g_enabled);
-    return g_enabled;
-}
-
-const std::vector<RE::FormID>& HiddenItemsPatch::GetHiddenFormIDs() {
-    spdlog::info("[HiddenItemsPatch][GetHiddenFormIDs] returning vector of size={}", g_formIds.size());
-    return g_formIds;
-}
+void HiddenItemsPatch::SetEnabled(bool enabled) { g_enabled = enabled; }
+bool HiddenItemsPatch::IsEnabled() { return g_enabled; }
+const std::vector<RE::FormID>& HiddenItemsPatch::GetHiddenFormIDs() { return g_formIds; }

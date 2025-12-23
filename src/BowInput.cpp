@@ -1,7 +1,6 @@
 
 #include "BowInput.h"
 
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <ranges>
@@ -17,6 +16,12 @@ using namespace std::literals;
 
 namespace {
     constexpr float kSmartClickThreshold = 0.18f;
+
+    inline std::uint64_t NowMs() noexcept {
+        using clock = std::chrono::steady_clock;
+        return static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(clock::now().time_since_epoch()).count());
+    }
 
     inline bool IsInputBlockedByMenus() {
         auto* ui = RE::UI::GetSingleton();
@@ -180,9 +185,14 @@ namespace {
             (void*)player, ist.pendingRestoreAfterSheathe.load(std::memory_order_relaxed),
             ist.sheathRequestedByPlayer.load(std::memory_order_relaxed), BowState::IsBowEquipped(),
             BowState::Get().isUsingBow);
+        auto& st = BowState::Get();
 
-        BowState::SetBowEquipped(false);
-        spdlog::info("[IBOW][INPUT][SHEATHE] SetBowEquipped(false) applied");
+        const bool pendingRestore = ist.pendingRestoreAfterSheathe.load(std::memory_order_relaxed);
+        const bool sheathReqPeek = ist.sheathRequestedByPlayer.load(std::memory_order_relaxed);
+
+        if (!pendingRestore && !sheathReqPeek) {
+            return;
+        }
 
         if (!player) {
             spdlog::info("[IBOW][INPUT][SHEATHE] player=null -> return");
@@ -191,23 +201,17 @@ namespace {
 
         auto* equipMgr = RE::ActorEquipManager::GetSingleton();
         if (!equipMgr) {
-            auto& st = BowState::Get();
-
             spdlog::info("[IBOW][INPUT][SHEATHE] equipMgr=null -> hard reset state | usingBow was={}", st.isUsingBow);
-
             ist.pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
             st.isUsingBow = false;
             BowState::ClearPrevWeapons();
             BowState::ClearPrevExtraEquipped();
             BowState::ClearPrevAmmo();
-
+            BowState::SetBowEquipped(false);
             spdlog::info("[IBOW][INPUT][SHEATHE] equipMgr=null -> return (state cleared)");
             return;
         }
 
-        auto& st = BowState::Get();
-
-        const bool pendingRestore = ist.pendingRestoreAfterSheathe.load(std::memory_order_relaxed);
         spdlog::info(
             "[IBOW][INPUT][SHEATHE] equipMgr ok | pendingRestoreAfterSheathe={} usingBow={} prevR=0x{:08X} "
             "prevL=0x{:08X} prevAmmo={}",
@@ -219,32 +223,22 @@ namespace {
                 "first)");
             ist.pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
             BowState::SetBowEquipped(false);
-
             spdlog::info("[IBOW][INPUT][SHEATHE] calling RestorePrevWeaponsAndAmmo(clearIsUsingBow=false)");
-            BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st, false);
+            BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st);
             spdlog::info("[IBOW][INPUT][SHEATHE] RestorePrevWeaponsAndAmmo done -> return");
             return;
         }
 
-        const bool sheathReq = ist.sheathRequestedByPlayer.exchange(false, std::memory_order_relaxed);
-        spdlog::info("[IBOW][INPUT][SHEATHE] sheathRequestedByPlayer.exchange(false) -> {}", sheathReq);
+        ist.sheathRequestedByPlayer.store(false, std::memory_order_relaxed);
+        spdlog::info("[IBOW][INPUT][SHEATHE] sheathRequestedByPlayer.exchange(false) -> {}", sheathReqPeek);
+        if (sheathReqPeek && st.isUsingBow) {
+            BowState::SetBowEquipped(false);
+            spdlog::info("[IBOW][INPUT][SHEATHE] calling RestorePrevWeaponsAndAmmo(clearIsUsingBow=true)");
+            BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st);
+            spdlog::info("[IBOW][INPUT][SHEATHE] RestorePrevWeaponsAndAmmo done (clearIsUsingBow=true)");
 
-        if (sheathReq) {
-            spdlog::info("[IBOW][INPUT][SHEATHE] sheath requested by player | st.isUsingBow={}", st.isUsingBow);
-
-            if (st.isUsingBow) {
-                BowState::SetBowEquipped(false);
-                spdlog::info("[IBOW][INPUT][SHEATHE] calling RestorePrevWeaponsAndAmmo(clearIsUsingBow=true)");
-                BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st, true);
-                spdlog::info("[IBOW][INPUT][SHEATHE] RestorePrevWeaponsAndAmmo done (clearIsUsingBow=true)");
-            } else {
-                spdlog::info("[IBOW][INPUT][SHEATHE] sheath requested but isUsingBow=false -> nothing to restore");
-            }
-
-            spdlog::info("[IBOW][INPUT][SHEATHE] return after sheathRequestedByPlayer path");
             return;
         }
-
         spdlog::info("[IBOW][INPUT][SHEATHE] no pending restore and no sheath request -> exit");
     }
 
@@ -325,6 +319,17 @@ namespace {
 
         return false;
     }
+
+    inline void UpdateUnequipGate() noexcept {
+        auto& ist = BowInput::Globals();
+        if (ist.allowUnequip.load(std::memory_order_relaxed)) {
+            return;
+        }
+        const std::uint64_t until = ist.allowUnequipReenableMs.load(std::memory_order_relaxed);
+        if (until != 0 && NowMs() >= until) {
+            ist.allowUnequip.store(true, std::memory_order_relaxed);
+        }
+    }
 }
 
 BowInput::GlobalState& BowInput::Globals() noexcept {
@@ -335,7 +340,6 @@ BowInput::GlobalState& BowInput::Globals() noexcept {
 void BowInput::IntegratedBowInputHandler::HandleNormalMode(RE::PlayerCharacter* player, bool anyNow,
                                                            bool blocked) const {
     auto& st = BowInput::Globals();
-
     spdlog::info("[IBOW][INPUT][MODE][NORMAL] enter | player={} anyNow={} blocked={} hotkeyDown(before)={}",
                  (void*)player, anyNow, blocked, st.hotkey.hotkeyDown);
 
@@ -346,8 +350,6 @@ void BowInput::IntegratedBowInputHandler::HandleNormalMode(RE::PlayerCharacter* 
         if (!blocked) {
             spdlog::info("[IBOW][INPUT][MODE][NORMAL] calling OnKeyPressed");
             OnKeyPressed(player);
-        } else {
-            spdlog::info("[IBOW][INPUT][MODE][NORMAL] blocked=true -> skip OnKeyPressed");
         }
     } else if (!anyNow && st.hotkey.hotkeyDown) {
         st.hotkey.hotkeyDown = false;
@@ -356,17 +358,12 @@ void BowInput::IntegratedBowInputHandler::HandleNormalMode(RE::PlayerCharacter* 
         if (!blocked) {
             spdlog::info("[IBOW][INPUT][MODE][NORMAL] calling OnKeyReleased");
             OnKeyReleased();
-        } else {
-            spdlog::info("[IBOW][INPUT][MODE][NORMAL] blocked=true -> skip OnKeyReleased");
         }
-    } else {
-        spdlog::info("[IBOW][INPUT][MODE][NORMAL] no edge (anyNow={}, hotkeyDown={})", anyNow, st.hotkey.hotkeyDown);
     }
 }
 
 void BowInput::IntegratedBowInputHandler::HandleSmartModePressed(bool blocked) const {
     auto& st = BowInput::Globals();
-
     spdlog::info(
         "[IBOW][INPUT][MODE][SMART] Pressed enter | blocked={} hotkeyDown(before)={} smartPending(before)={} "
         "smartTimer(before)={:.4f}",
@@ -405,8 +402,6 @@ void BowInput::IntegratedBowInputHandler::HandleSmartModeReleased(RE::PlayerChar
             st.mode.holdMode = false;
 
             OnKeyPressed(player);
-        } else {
-            spdlog::info("[IBOW][INPUT][MODE][SMART] Released: smartPending=false -> no tap-press");
         }
 
         spdlog::info("[IBOW][INPUT][MODE][SMART] calling OnKeyReleased");
@@ -461,8 +456,6 @@ void BowInput::IntegratedBowInputHandler::UpdateHotkeyState(RE::PlayerCharacter*
             "HandleSmartModeReleased(blocked={})",
             blocked);
         HandleSmartModeReleased(player, blocked);
-    } else {
-        spdlog::info("[IBOW][INPUT][HOTKEY] SmartMode no edge (anyNow={}, prevAny={}) -> nothing", anyNow, prevAny);
     }
 }
 
@@ -471,26 +464,19 @@ void BowInput::IntegratedBowInputHandler::HandleKeyboardButton(const RE::ButtonE
     const auto code = static_cast<int>(a_event->idCode);
     auto& st = BowInput::Globals();
 
-    const bool captureReq = st.capture.captureRequested.load(std::memory_order_relaxed);
-    if (captureReq) {
-        // loga sempre em capture mode
+    if (const bool captureReq = st.capture.captureRequested.load(std::memory_order_relaxed); captureReq) {
         spdlog::info("[IBOW][INPUT][KBD] CAPTURE mode event code={} down={} up={} value={:.3f} held={:.4f}", code,
                      a_event->IsDown(), a_event->IsUp(), a_event->Value(), a_event->HeldDuration());
-
         if (a_event->IsDown()) {
             const int encoded = code;
             st.capture.capturedEncoded.store(encoded, std::memory_order_relaxed);
             st.capture.captureRequested.store(false, std::memory_order_relaxed);
-
             spdlog::info("[IBOW][INPUT][KBD] CAPTURE stored encoded={} (code={}) captureRequested=false", encoded,
                          code);
-        } else {
-            spdlog::info("[IBOW][INPUT][KBD] CAPTURE ignoring (not down)");
         }
         return;
     }
 
-    // Descobre se esse code é parte do combo configurado
     int idx = -1;
     int expected = -1;
     for (int i = 0; i < kMaxComboKeys; ++i) {
@@ -502,7 +488,6 @@ void BowInput::IntegratedBowInputHandler::HandleKeyboardButton(const RE::ButtonE
     }
 
     if (idx < 0) {
-        // sem log aqui pra não spammar eventos irrelevantes
         return;
     }
 
@@ -514,9 +499,11 @@ void BowInput::IntegratedBowInputHandler::HandleKeyboardButton(const RE::ButtonE
     if (a_event->IsDown()) {
         st.hotkey.bowKeyDown[idx] = true;
         spdlog::info("[IBOW][INPUT][KBD] idx={} -> bowKeyDown=true", idx);
+
     } else if (a_event->IsUp()) {
         st.hotkey.bowKeyDown[idx] = false;
         spdlog::info("[IBOW][INPUT][KBD] idx={} -> bowKeyDown=false", idx);
+
     } else {
         spdlog::info("[IBOW][INPUT][KBD] idx={} ignored (neither down nor up)", idx);
         return;
@@ -525,7 +512,6 @@ void BowInput::IntegratedBowInputHandler::HandleKeyboardButton(const RE::ButtonE
     const bool comboK = AreAllActiveKeysDown();
     spdlog::info("[IBOW][INPUT][KBD] comboK={} (after update). Calling UpdateHotkeyState(kbdCombo={}, padCombo={})",
                  comboK, comboK, st.hotkey.padComboDown);
-
     UpdateHotkeyState(player, comboK, st.hotkey.padComboDown);
 }
 
@@ -536,7 +522,6 @@ void BowInput::IntegratedBowInputHandler::ResetExitState() const {
         "[IBOW][INPUT][EXIT] ResetExitState enter pending={} waitForEquip={} waitEquipTimer={:.4f} delayTimer={:.4f} "
         "delayMs={}",
         st.exit.pending, st.exit.waitForEquip, st.exit.waitEquipTimer, st.exit.delayTimer, st.exit.delayMs);
-
     st.exit.pending = false;
     st.exit.waitForEquip = false;
     st.exit.waitEquipTimer = 0.0f;
@@ -553,20 +538,15 @@ void BowInput::IntegratedBowInputHandler::HandleGamepadButton(const RE::ButtonEv
     const auto code = static_cast<int>(a_event->idCode);
     auto& st = BowInput::Globals();
 
-    const bool captureReq = st.capture.captureRequested.load(std::memory_order_relaxed);
-    if (captureReq) {
+    if (const bool captureReq = st.capture.captureRequested.load(std::memory_order_relaxed); captureReq) {
         spdlog::info("[IBOW][INPUT][PAD] CAPTURE mode event code={} down={} up={} value={:.3f} held={:.4f}", code,
                      a_event->IsDown(), a_event->IsUp(), a_event->Value(), a_event->HeldDuration());
-
         if (a_event->IsDown()) {
             const int encoded = -(code + 1);
             st.capture.capturedEncoded.store(encoded, std::memory_order_relaxed);
             st.capture.captureRequested.store(false, std::memory_order_relaxed);
-
             spdlog::info("[IBOW][INPUT][PAD] CAPTURE stored encoded={} (code={}) captureRequested=false", encoded,
                          code);
-        } else {
-            spdlog::info("[IBOW][INPUT][PAD] CAPTURE ignoring (not down)");
         }
         return;
     }
@@ -582,7 +562,7 @@ void BowInput::IntegratedBowInputHandler::HandleGamepadButton(const RE::ButtonEv
     }
 
     if (idx < 0) {
-        return;  // evita spam
+        return;
     }
 
     spdlog::info(
@@ -593,9 +573,11 @@ void BowInput::IntegratedBowInputHandler::HandleGamepadButton(const RE::ButtonEv
     if (a_event->IsDown()) {
         st.hotkey.bowPadDown[idx] = true;
         spdlog::info("[IBOW][INPUT][PAD] idx={} -> bowPadDown=true", idx);
+
     } else if (a_event->IsUp()) {
         st.hotkey.bowPadDown[idx] = false;
         spdlog::info("[IBOW][INPUT][PAD] idx={} -> bowPadDown=false", idx);
+
     } else {
         spdlog::info("[IBOW][INPUT][PAD] idx={} ignored (neither down nor up)", idx);
         return;
@@ -609,6 +591,7 @@ void BowInput::IntegratedBowInputHandler::HandleGamepadButton(const RE::ButtonEv
 }
 
 void BowInput::IntegratedBowInputHandler::OnKeyPressed(RE::PlayerCharacter* player) const {
+    BowInput::Globals().lastHotkeyPressMs.store(NowMs(), std::memory_order_relaxed);
     auto* equipMgr = RE::ActorEquipManager::GetSingleton();
     auto const& ist = BowInput::Globals();
 
@@ -641,12 +624,7 @@ void BowInput::IntegratedBowInputHandler::OnKeyPressed(RE::PlayerCharacter* play
         return;
     }
 
-    RE::TESObjectWEAP const* bow = st.chosenBow.base ? st.chosenBow.base->As<RE::TESObjectWEAP>() : nullptr;
-    spdlog::info("[IBOW][INPUT][PRESS] chosen bow ptr={} base={} extra={} bowFormID=0x{:08X} bowName='{}'", (void*)bow,
-                 (void*)st.chosenBow.base, (void*)st.chosenBow.extra, bow ? bow->GetFormID() : 0u,
-                 (bow && bow->GetName()) ? bow->GetName() : "");
-
-    if (!bow) {
+    if (RE::TESObjectWEAP const* bow = st.chosenBow.base ? st.chosenBow.base->As<RE::TESObjectWEAP>() : nullptr; !bow) {
         spdlog::info("[IBOW][INPUT][PRESS] chosen bow is null after ensure -> return");
         return;
     }
@@ -654,11 +632,11 @@ void BowInput::IntegratedBowInputHandler::OnKeyPressed(RE::PlayerCharacter* play
     if (ist.mode.holdMode) {
         spdlog::info("[IBOW][INPUT][PRESS] holdMode path | isUsingBow={} bowEquipped={} autoDrawEnabled={}",
                      st.isUsingBow, BowState::IsBowEquipped(), IsAutoDrawEnabled());
-
         if (!st.isUsingBow) {
             spdlog::info("[IBOW][INPUT][PRESS] holdMode: !isUsingBow -> EnterBowMode()");
             EnterBowMode(player, equipMgr, st);
             spdlog::info("[IBOW][INPUT][PRESS] holdMode: EnterBowMode returned -> return");
+
             return;
         }
 
@@ -672,15 +650,13 @@ void BowInput::IntegratedBowInputHandler::OnKeyPressed(RE::PlayerCharacter* play
             } else {
                 spdlog::info(
                     "[IBOW][INPUT][PRESS] holdMode: autoDraw ON but bowEquipped=false -> ScheduleAutoAttackDraw()");
+
                 ScheduleAutoAttackDraw();
             }
-        } else {
-            spdlog::info("[IBOW][INPUT][PRESS] holdMode: autoDraw OFF -> no auto-attack action");
         }
     } else {
         spdlog::info("[IBOW][INPUT][PRESS] toggle path | isUsingBow={} bowEquipped={}", st.isUsingBow,
                      BowState::IsBowEquipped());
-
         if (st.isUsingBow) {
             const bool waitForEquip = !BowState::IsBowEquipped();
             spdlog::info(
@@ -692,32 +668,21 @@ void BowInput::IntegratedBowInputHandler::OnKeyPressed(RE::PlayerCharacter* play
             EnterBowMode(player, equipMgr, st);
         }
     }
-
     spdlog::info("[IBOW][INPUT][PRESS] exit");
 }
 
 void BowInput::IntegratedBowInputHandler::OnKeyReleased() const {
-    auto const& ist = BowInput::Globals();
-
-    spdlog::info(
-        "[IBOW][INPUT][RELEASE] enter holdMode={} hotkeyDown={} exit.pending={} bowEquipped={} autoHeld={} "
-        "sheathDelayMs={:.3f} autoDrawEnabled={}",
-        ist.mode.holdMode, ist.hotkey.hotkeyDown, ist.exit.pending, BowState::IsBowEquipped(),
-        BowState::IsAutoAttackHeld(), GetSheathedDelayMs(), IsAutoDrawEnabled());
-
-    if (!ist.mode.holdMode) {
+    if (auto const& ist = BowInput::Globals(); !ist.mode.holdMode) {
         spdlog::info("[IBOW][INPUT][RELEASE] not holdMode -> return");
         return;
     }
 
-    auto const* equipMgr = RE::ActorEquipManager::GetSingleton();
-    if (!equipMgr) {
+    if (auto const* equipMgr = RE::ActorEquipManager::GetSingleton(); !equipMgr) {
         spdlog::info("[IBOW][INPUT][RELEASE] equipMgr=null -> return");
         return;
     }
 
-    auto const& st = BowState::Get();
-    if (!st.isUsingBow) {
+    if (auto const& st = BowState::Get(); !st.isUsingBow) {
         spdlog::info("[IBOW][INPUT][RELEASE] isUsingBow=false -> return");
         return;
     }
@@ -734,21 +699,17 @@ void BowInput::IntegratedBowInputHandler::OnKeyReleased() const {
         spdlog::info("[IBOW][INPUT][RELEASE] autoDraw && autoHeld -> StopAutoAttackDraw() + SetAutoAttackHeld(false)");
         StopAutoAttackDraw();
         BowState::SetAutoAttackHeld(false);
-    } else {
-        spdlog::info("[IBOW][INPUT][RELEASE] no auto-attack stop needed");
     }
 
     const bool waitForEquip = !BowState::IsBowEquipped();
     spdlog::info("[IBOW][INPUT][RELEASE] ScheduleExitBowMode(waitForEquip={}, delayMs={})", waitForEquip, delayMs);
 
     ScheduleExitBowMode(waitForEquip, delayMs);
-
     spdlog::info("[IBOW][INPUT][RELEASE] exit");
 }
 
 bool BowInput::IntegratedBowInputHandler::IsWeaponDrawn(RE::Actor* actor) {
     spdlog::info("[IBOW][INPUT][WEAPON] IsWeaponDrawn enter actor={}", (void*)actor);
-
     if (!actor) {
         spdlog::info("[IBOW][INPUT][WEAPON] actor=null -> false");
         return false;
@@ -764,12 +725,12 @@ bool BowInput::IntegratedBowInputHandler::IsWeaponDrawn(RE::Actor* actor) {
 
     const bool drawn = state->IsWeaponDrawn();
     spdlog::info("[IBOW][INPUT][WEAPON] IsWeaponDrawn result={}", drawn);
+
     return drawn;
 }
 
 void BowInput::IntegratedBowInputHandler::SetWeaponDrawn(RE::Actor* actor, bool drawn) {
     spdlog::info("[IBOW][INPUT][WEAPON] SetWeaponDrawn enter actor={} drawn={}", (void*)actor, drawn);
-
     if (!actor) {
         spdlog::info("[IBOW][INPUT][WEAPON] actor=null -> return");
         return;
@@ -781,7 +742,6 @@ void BowInput::IntegratedBowInputHandler::SetWeaponDrawn(RE::Actor* actor, bool 
 
 RE::ExtraDataList* BowInput::IntegratedBowInputHandler::GetPrimaryExtra(RE::InventoryEntryData* entry) {
     spdlog::info("[IBOW][INPUT][EXTRA] GetPrimaryExtra enter entry={}", (void*)entry);
-
     if (!entry) {
         spdlog::info("[IBOW][INPUT][EXTRA] entry=null -> return null");
         return nullptr;
@@ -791,23 +751,21 @@ RE::ExtraDataList* BowInput::IntegratedBowInputHandler::GetPrimaryExtra(RE::Inve
         return nullptr;
     }
 
-    std::uint32_t seen = 0;
     for (auto* xList : *entry->extraLists) {
-        ++seen;
         if (xList) {
-            spdlog::info("[IBOW][INPUT][EXTRA] GetPrimaryExtra found xList={} (seen={}) -> return", (void*)xList, seen);
             return xList;
         }
     }
 
-    spdlog::info("[IBOW][INPUT][EXTRA] GetPrimaryExtra no non-null xList (seen={}) -> return null", seen);
+    spdlog::info("[IBOW][INPUT][EXTRA] GetPrimaryExtra no non-null xList -> return null");
     return nullptr;
 }
 
 void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
                                                        BowState::IntegratedBowState& st) {
-    auto const& ist = BowInput::Globals();
-
+    auto& ist = BowInput::Globals();
+    ist.sheathRequestedByPlayer.store(false, std::memory_order_relaxed);
+    ist.pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
     spdlog::info(
         "[IBOW][INPUT][ENTER] EnterBowMode enter player={} equipMgr={} holdMode={} autoDraw={} hotkeyDown={} "
         "waitingAutoAfterEquip={} bowEquipped={}",
@@ -820,19 +778,17 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
         return;
     }
 
-    // ---- AMMO snapshot ----
     RE::TESAmmo* currentAmmo = player->GetCurrentAmmo();
     spdlog::info("[IBOW][INPUT][ENTER] currentAmmo ptr={} formID=0x{:08X} name='{}'", (void*)currentAmmo,
                  currentAmmo ? currentAmmo->GetFormID() : 0u,
                  (currentAmmo && currentAmmo->GetName()) ? currentAmmo->GetName() : "");
+
     BowState::SetPrevAmmo(currentAmmo);
 
-    // ---- Armor snapshot BEFORE ----
     std::vector<BowState::ExtraEquippedItem> wornBefore;
     BowState::CaptureWornArmorSnapshot(wornBefore);
     spdlog::info("[IBOW][INPUT][ENTER] wornBefore snapshot size={}", wornBefore.size());
 
-    // ---- Chosen bow ----
     RE::TESObjectWEAP* bow = st.chosenBow.base ? st.chosenBow.base->As<RE::TESObjectWEAP>() : nullptr;
     RE::ExtraDataList* bowExtra = st.chosenBow.extra;
 
@@ -845,7 +801,6 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
         return;
     }
 
-    // ---- Equipped hands snapshot ----
     auto* rightEntry = player->GetEquippedEntryData(false);
     auto* leftEntry = player->GetEquippedEntryData(true);
 
@@ -864,12 +819,11 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
 
     BowState::SetPrevWeapons(baseR, extraR, baseL, extraL);
 
-    // ---- Drawn state ----
     const bool alreadyDrawn = IsWeaponDrawn(player);
     st.wasCombatPosed = alreadyDrawn;
+
     spdlog::info("[IBOW][INPUT][ENTER] alreadyDrawn={} -> st.wasCombatPosed={}", alreadyDrawn, st.wasCombatPosed);
 
-    // ---- Equip chosen bow ----
     spdlog::info("[IBOW][INPUT][ENTER] EquipObject(bow) begin | st.isEquipingBow={} st.isUsingBow={}", st.isEquipingBow,
                  st.isUsingBow);
 
@@ -887,27 +841,24 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
     spdlog::info("[IBOW][INPUT][ENTER] EquipObject(bow) done | st.isEquipingBow={} st.isUsingBow={}", st.isEquipingBow,
                  st.isUsingBow);
 
-    // ---- Armor snapshot AFTER ----
     std::vector<BowState::ExtraEquippedItem> wornAfter;
     BowState::CaptureWornArmorSnapshot(wornAfter);
     spdlog::info("[IBOW][INPUT][ENTER] wornAfter snapshot size={}", wornAfter.size());
 
     auto removed = BowState::DiffArmorSnapshot(wornBefore, wornAfter);
     spdlog::info("[IBOW][INPUT][ENTER] removed armor snapshot diff size={}", removed.size());
+
     BowState::SetPrevExtraEquipped(std::move(removed));
 
-    // ---- Hidden items patch ----
-    const bool hiddenEnabled = HiddenItemsPatch::IsEnabled();
-    spdlog::info("[IBOW][INPUT][ENTER] HiddenItemsPatch enabled={}", hiddenEnabled);
-
-    if (hiddenEnabled) {
+    if (const bool hiddenEnabled = HiddenItemsPatch::IsEnabled(); hiddenEnabled) {
+        spdlog::info("[IBOW][INPUT][ENTER] HiddenItemsPatch enabled={}", hiddenEnabled);
         auto const& ids = HiddenItemsPatch::GetHiddenFormIDs();
         spdlog::info("[IBOW][INPUT][ENTER] HiddenItemsPatch hiddenFormIDs count={}", ids.size());
+
         BowState::ApplyHiddenItemsPatch(player, equipMgr, ids);
         spdlog::info("[IBOW][INPUT][ENTER] HiddenItemsPatch applied");
     }
 
-    // ---- Preferred arrow ----
     if (auto* preferred = BowState::GetPreferredArrow()) {
         spdlog::info("[IBOW][INPUT][ENTER] preferredArrow ptr={} formID=0x{:08X} name='{}'", (void*)preferred,
                      preferred->GetFormID(), preferred->GetName() ? preferred->GetName() : "");
@@ -918,28 +869,21 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
         if (!inv.empty()) {
             spdlog::info("[IBOW][INPUT][ENTER] equipping preferredArrow");
             equipMgr->EquipObject(player, preferred, nullptr, 1, nullptr, true, true, true, false);
-        } else {
-            spdlog::info("[IBOW][INPUT][ENTER] preferredArrow not in inventory -> skip equip");
         }
-    } else {
-        spdlog::info("[IBOW][INPUT][ENTER] preferredArrow=null");
     }
 
-    // ---- Draw weapon if needed ----
     if (!alreadyDrawn) {
         spdlog::info("[IBOW][INPUT][ENTER] player was not drawn -> SetWeaponDrawn(true)");
         SetWeaponDrawn(player, true);
-    } else {
-        spdlog::info("[IBOW][INPUT][ENTER] player already drawn -> skip SetWeaponDrawn(true)");
     }
 
-    // ---- Auto-attack waiting after equip ----
     BowState::SetAutoAttackHeld(false);
 
     const bool shouldWaitAuto = (ist.mode.holdMode && IsAutoDrawEnabled() && BowInput::IsHotkeyDown());
 
     BowState::SetWaitingAutoAfterEquip(shouldWaitAuto);
-
+    ist.allowUnequip.store(false, std::memory_order_relaxed);
+    ist.allowUnequipReenableMs.store(NowMs() + 2000, std::memory_order_relaxed);
     spdlog::info("[IBOW][INPUT][ENTER] SetWaitingAutoAfterEquip({}) | holdMode={} autoDraw={} hotkeyDown={}",
                  shouldWaitAuto, ist.mode.holdMode, IsAutoDrawEnabled(), BowInput::IsHotkeyDown());
 
@@ -966,18 +910,14 @@ void BowInput::IntegratedBowInputHandler::ExitBowMode(RE::PlayerCharacter* playe
         spdlog::info(
             "[IBOW][INPUT][EXIT] not combat posed and not in combat -> SetWeaponDrawn(false) + "
             "pendingRestoreAfterSheathe=true + usingBow=false");
-
         SetWeaponDrawn(player, false);
-
         ist.pendingRestoreAfterSheathe.store(true, std::memory_order_relaxed);
         st.isUsingBow = false;
-
         spdlog::info("[IBOW][INPUT][EXIT] ExitBowMode return early (pendingRestoreAfterSheathe=true)");
         return;
     }
-
     spdlog::info("[IBOW][INPUT][EXIT] restoring prev weapons/ammo now (clearIsUsingBow=true)");
-    BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st, true);
+    BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st);
     spdlog::info("[IBOW][INPUT][EXIT] ExitBowMode exit after RestorePrevWeaponsAndAmmo");
 }
 
@@ -1005,7 +945,6 @@ void BowInput::IntegratedBowInputHandler::UpdateSmartMode(RE::PlayerCharacter* p
     auto& st = BowInput::Globals();
 
     if (!st.mode.smartMode || !st.mode.smartPending || !st.hotkey.hotkeyDown) {
-        // não loga aqui pra não spammar quando smart mode não está em uso
         return;
     }
 
@@ -1016,7 +955,6 @@ void BowInput::IntegratedBowInputHandler::UpdateSmartMode(RE::PlayerCharacter* p
         st.mode.holdMode);
 
     st.mode.smartTimer += dt;
-
     spdlog::info("[IBOW][INPUT][SMART] tick after add smartTimer={:.4f}", st.mode.smartTimer);
 
     if (st.mode.smartTimer >= kSmartClickThreshold) {
@@ -1040,15 +978,14 @@ void BowInput::IntegratedBowInputHandler::UpdateSmartMode(RE::PlayerCharacter* p
 void BowInput::IntegratedBowInputHandler::UpdateExitEquipWait(float dt) const {
     auto& st = BowInput::Globals();
 
-    const bool bowEquipped = BowState::IsBowEquipped();
-    if (!st.exit.waitForEquip || bowEquipped) {
+    if (const bool bowEquipped = BowState::IsBowEquipped(); !st.exit.waitForEquip || bowEquipped) {
         return;
     }
 
     spdlog::info(
         "[IBOW][INPUT][EXIT_WAIT] tick enter dt={:.4f} waitEquipTimer(before)={:.4f} waitEquipMax={:.4f} "
         "bowEquipped={}",
-        dt, st.exit.waitEquipTimer, st.exit.waitEquipMax, bowEquipped);
+        dt, st.exit.waitEquipTimer, st.exit.waitEquipMax, BowState::IsBowEquipped());
 
     st.exit.waitEquipTimer += dt;
 
@@ -1067,16 +1004,16 @@ bool BowInput::IntegratedBowInputHandler::IsExitDelayReady(float dt) const {
 
     if (st.exit.delayMs <= 0) {
         spdlog::info("[IBOW][INPUT][EXIT_DELAY] ready immediately (delayMs<=0) delayMs={}", st.exit.delayMs);
+
         return true;
     }
 
-    const float prev = st.exit.delayTimer;
     st.exit.delayTimer += dt * 1000.0f;
 
-    const float target = static_cast<float>(st.exit.delayMs);
+    const auto target = static_cast<float>(st.exit.delayMs);
     const bool ready = st.exit.delayTimer >= target;
 
-    spdlog::info("[IBOW][INPUT][EXIT_DELAY] tick dt={:.4f}s timer {:.2f}->{:.2f} ms target={:.2f} ready={}", dt, prev,
+    spdlog::info("[IBOW][INPUT][EXIT_DELAY] tick dt={:.4f}s timer {:.2f} ms target={:.2f} ready={}", dt,
                  st.exit.delayTimer, target, ready);
 
     return ready;
@@ -1084,7 +1021,6 @@ bool BowInput::IntegratedBowInputHandler::IsExitDelayReady(float dt) const {
 
 void BowInput::IntegratedBowInputHandler::CompleteExit() const {
     spdlog::info("[IBOW][INPUT][EXIT] CompleteExit enter");
-
     if (auto* equipMgr = RE::ActorEquipManager::GetSingleton(); equipMgr) {
         auto* player = RE::PlayerCharacter::GetSingleton();
         spdlog::info("[IBOW][INPUT][EXIT] equipMgr={} player={}", (void*)equipMgr, (void*)player);
@@ -1095,18 +1031,12 @@ void BowInput::IntegratedBowInputHandler::CompleteExit() const {
                          bowSt.isUsingBow, bowSt.wasCombatPosed, BowState::IsBowEquipped());
 
             ExitBowMode(player, equipMgr, bowSt);
-
             spdlog::info("[IBOW][INPUT][EXIT] ExitBowMode returned");
-        } else {
-            spdlog::info("[IBOW][INPUT][EXIT] player=null -> skip ExitBowMode");
         }
-    } else {
-        spdlog::info("[IBOW][INPUT][EXIT] equipMgr=null -> skip ExitBowMode");
     }
 
     spdlog::info("[IBOW][INPUT][EXIT] ResetExitState()");
     ResetExitState();
-
     spdlog::info("[IBOW][INPUT][EXIT] CompleteExit exit");
 }
 
@@ -1125,12 +1055,12 @@ void BowInput::IntegratedBowInputHandler::UpdateExitPending(float dt) const {
 
     if (st.exit.waitForEquip && !bowEquipped) {
         spdlog::info("[IBOW][INPUT][EXIT] branch: waiting for equip...");
+
         UpdateExitEquipWait(dt);
     } else if (IsExitDelayReady(dt)) {
         spdlog::info("[IBOW][INPUT][EXIT] branch: delay ready -> CompleteExit()");
+
         CompleteExit();
-    } else {
-        spdlog::info("[IBOW][INPUT][EXIT] branch: delay not ready yet");
     }
 }
 
@@ -1149,23 +1079,28 @@ void BowInput::IntegratedBowInputHandler::ProcessButtonEvent(const RE::ButtonEve
         (void*)player, static_cast<int>(dev), ue, button->IsDown(), button->IsUp(), button->Value(),
         button->HeldDuration(), ist.sheathRequestedByPlayer.load(std::memory_order_relaxed));
 
-    if (ue == "Ready Weapon"sv && button->IsDown()) {
-        ist.sheathRequestedByPlayer.store(true, std::memory_order_relaxed);
-        spdlog::info("[IBOW][INPUT][BTN] Ready Weapon DOWN -> sheathRequestedByPlayer=true");
+    if (ue == "Shout"sv && button->IsDown() && player && IsCurrentTransformPower(player)) {
+        IntegratedBowInputHandler::ForceImmediateExit();
     }
 
-    // if (ue == "Shout"sv && button->IsDown() && player && IsCurrentTransformPower(player)) {
-    //     IntegratedBowInputHandler::ForceImmediateExit();
-    // }
+    if (ue == "Ready Weapon"sv && button->IsDown()) {
+        auto const& st = BowState::Get();
+        const std::uint64_t now = NowMs();
+        const std::uint64_t lastHotkey = ist.lastHotkeyPressMs.load(std::memory_order_relaxed);
+        const bool nearHotkey = (lastHotkey != 0) && (now - lastHotkey) < 250;
+        if (dev != RE::INPUT_DEVICE::kKeyboard && dev != RE::INPUT_DEVICE::kGamepad) {
+            return;
+        }
+        if (st.isUsingBow && !ist.hotkey.hotkeyDown && !nearHotkey && BowState::IsBowEquipped() && !st.isEquipingBow) {
+            ist.sheathRequestedByPlayer.store(true, std::memory_order_relaxed);
+            spdlog::info("[IBOW][INPUT][BTN] Ready Weapon DOWN -> sheathRequestedByPlayer=true");
+        }
+    }
 
     if (dev == RE::INPUT_DEVICE::kKeyboard) {
-        spdlog::info("[IBOW][INPUT][BTN] dispatch -> HandleKeyboardButton");
         HandleKeyboardButton(button, player);
     } else if (dev == RE::INPUT_DEVICE::kGamepad) {
-        spdlog::info("[IBOW][INPUT][BTN] dispatch -> HandleGamepadButton");
         HandleGamepadButton(button, player);
-    } else {
-        spdlog::info("[IBOW][INPUT][BTN] dispatch -> ignored device={}", static_cast<int>(dev));
     }
 }
 
@@ -1176,20 +1111,13 @@ void BowInput::IntegratedBowInputHandler::ProcessInputEvents(RE::InputEvent* con
         return;
     }
 
-    std::uint32_t total = 0;
-    std::uint32_t buttons = 0;
-
     for (auto e = *a_events; e; e = e->next) {
-        ++total;
         if (auto button = e->AsButtonEvent()) {
-            ++buttons;
-            // ProcessButtonEvent já loga UE/dev/down/up/etc, então aqui só despachamos.
             ProcessButtonEvent(button, player);
         }
     }
 
-    spdlog::info("[IBOW][INPUT][PROC_EVENTS] processed totalEvents={} buttonEvents={} player={}", total, buttons,
-                 (void*)player);
+    spdlog::info("[IBOW][INPUT][PROC_EVENTS] processed");
 }
 
 float BowInput::IntegratedBowInputHandler::CalculateDeltaTime() const {
@@ -1200,12 +1128,10 @@ float BowInput::IntegratedBowInputHandler::CalculateDeltaTime() const {
     float dt = std::chrono::duration<float>(now - last).count();
     last = now;
 
-    // Loga só quando é "suspeito", porque isso pode acontecer com alt-tab, breakpoint, loading, etc.
     if (dt < 0.0f || dt > 0.5f) {
         spdlog::info("[IBOW][INPUT][DT] abnormal dt={:.6f}s -> clamped to 0", dt);
+
         dt = 0.0f;
-    } else {
-        spdlog::info("[IBOW][INPUT][DT] dt={:.6f}s", dt);
     }
 
     return dt;
@@ -1221,11 +1147,10 @@ RE::BSEventNotifyControl BowInput::IntegratedBowInputHandler::ProcessEvent(RE::I
     auto* player = RE::PlayerCharacter::GetSingleton();
     if (!player) {
         spdlog::info("[IBOW][INPUT][SINK] ProcessEvent player=null -> Continue");
+
         return RE::BSEventNotifyControl::kContinue;
     }
-
     auto& ist = BowInput::Globals();
-
     float dt = CalculateDeltaTime();
 
     spdlog::info(
@@ -1237,6 +1162,7 @@ RE::BSEventNotifyControl BowInput::IntegratedBowInputHandler::ProcessEvent(RE::I
         ist.exit.waitEquipTimer, ist.attackHold.active.load(std::memory_order_relaxed),
         ist.attackHold.secs.load(std::memory_order_relaxed));
 
+    UpdateUnequipGate();
     UpdateSmartMode(player, dt);
     UpdateExitPending(dt);
     ProcessInputEvents(a_events, player);
@@ -1252,14 +1178,12 @@ RE::BSEventNotifyControl BowInput::IntegratedBowInputHandler::ProcessEvent(RE::I
 }
 
 void BowInput::IntegratedBowInputHandler::ScheduleAutoAttackDraw() {
-    auto const* player = RE::PlayerCharacter::GetSingleton();
-    if (!player) {
+    if (auto const* player = RE::PlayerCharacter::GetSingleton(); !player) {
         spdlog::info("[IBOW][INPUT][AUTO_SCHED] player=null -> return");
         return;
     }
 
-    auto const& bowSt = BowState::Get();
-    if (!bowSt.isUsingBow) {
+    if (auto const& bowSt = BowState::Get(); !bowSt.isUsingBow) {
         spdlog::info("[IBOW][INPUT][AUTO_SCHED] isUsingBow=false -> return");
         return;
     }
@@ -1268,15 +1192,14 @@ void BowInput::IntegratedBowInputHandler::ScheduleAutoAttackDraw() {
                  BowState::IsBowEquipped(), BowState::IsWaitingAutoAfterEquip());
 
     BowState::SetWaitingAutoAfterEquip(true);
-
     spdlog::info("[IBOW][INPUT][AUTO_SCHED] waitingNow={}", BowState::IsWaitingAutoAfterEquip());
 }
 
 BowInput::IntegratedBowInputHandler* BowInput::IntegratedBowInputHandler::GetSingleton() {
     static IntegratedBowInputHandler instance;
     auto* ptr = std::addressof(instance);
-
     spdlog::info("[IBOW][INPUT][SINGLETON] GetSingleton -> {}", (void*)ptr);
+
     return ptr;
 }
 
@@ -1286,10 +1209,7 @@ void BowInput::RegisterInputHandler() {
         spdlog::info("[IBOW][INPUT][REGISTER] BSInputDeviceManager={} AddEventSink sink={}", (void*)mgr, (void*)sink);
 
         mgr->AddEventSink(sink);
-
         spdlog::info("[IBOW][INPUT][REGISTER] AddEventSink done");
-    } else {
-        spdlog::info("[IBOW][INPUT][REGISTER] BSInputDeviceManager=null -> cannot register");
     }
 }
 
@@ -1344,7 +1264,6 @@ void BowInput::SetKeyScanCodes(int k1, int k2, int k3) {
 
     st.hotkey.kbdComboDown = false;
     st.hotkey.hotkeyDown = false;
-
     spdlog::info("[IBOW][INPUT][CFG] SetKeyScanCodes exit | new=[{}, {}, {}] kbdComboDown=false hotkeyDown=false",
                  st.hotkeyConfig.bowKeyScanCodes[0], st.hotkeyConfig.bowKeyScanCodes[1],
                  st.hotkeyConfig.bowKeyScanCodes[2]);
@@ -1368,35 +1287,31 @@ void BowInput::SetGamepadButtons(int b1, int b2, int b3) {
 
     st.hotkey.padComboDown = false;
     st.hotkey.hotkeyDown = false;
-
     spdlog::info("[IBOW][INPUT][CFG] SetGamepadButtons exit | new=[{}, {}, {}] padComboDown=false hotkeyDown=false",
                  st.hotkeyConfig.bowPadButtons[0], st.hotkeyConfig.bowPadButtons[1], st.hotkeyConfig.bowPadButtons[2]);
 }
 
 void BowInput::RequestGamepadCapture() {
     auto& st = BowInput::Globals();
-
     spdlog::info("[IBOW][INPUT][CAPTURE] RequestGamepadCapture enter | captureRequested={} capturedEncoded={}",
                  st.capture.captureRequested.load(std::memory_order_relaxed),
                  st.capture.capturedEncoded.load(std::memory_order_relaxed));
 
     st.capture.captureRequested.store(true, std::memory_order_relaxed);
     st.capture.capturedEncoded.store(-1, std::memory_order_relaxed);
-
     spdlog::info("[IBOW][INPUT][CAPTURE] RequestGamepadCapture exit | captureRequested=true capturedEncoded=-1");
 }
 
 int BowInput::PollCapturedGamepadButton() {
     auto& st = BowInput::Globals();
-    const int v = st.capture.capturedEncoded.load(std::memory_order_relaxed);
 
-    if (v != -1) {
+    if (const int v = st.capture.capturedEncoded.load(std::memory_order_relaxed); v != -1) {
         spdlog::info("[IBOW][INPUT][CAPTURE] PollCapturedGamepadButton got capturedEncoded={} -> resetting to -1", v);
+
         st.capture.capturedEncoded.store(-1, std::memory_order_relaxed);
         return v;
     }
 
-    // Evita spam: não loga quando não tem nada.
     return -1;
 }
 
@@ -1404,10 +1319,9 @@ bool BowInput::IsHotkeyDown() {
     auto const& st = BowInput::Globals();
     const bool v = st.hotkey.hotkeyDown;
 
-    // Evita spam: loga só em transição
-    static bool last = false;  // ok aqui: só diagnóstico
-    if (v != last) {
+    if (static bool last = false; v != last) {
         spdlog::info("[IBOW][INPUT][HOTKEY] IsHotkeyDown changed {} -> {}", last, v);
+
         last = v;
     }
 
@@ -1416,23 +1330,20 @@ bool BowInput::IsHotkeyDown() {
 
 void BowInput::HandleAnimEvent(const RE::BSAnimationGraphEvent* ev, RE::BSTEventSource<RE::BSAnimationGraphEvent>*) {
     if (!ev || !ev->holder) {
-        // Evita spam: não loga aqui (pode vir evento nulo em alguns fluxos).
         return;
     }
 
     auto* actor = ev->holder->As<RE::Actor>();
     auto const& ist = BowInput::Globals();
-
     auto const* player = RE::PlayerCharacter::GetSingleton();
+
     if (!actor || actor != player) {
-        // Evita spam: não loga eventos de NPCs.
         return;
     }
 
     std::string_view tag{ev->tag.c_str(), ev->tag.size()};
     std::string_view payload{ev->payload.c_str(), ev->payload.size()};
 
-    // Log geral do evento do player
     spdlog::info(
         "[IBOW][ANIM] event player={} tag='{}' payload='{}' | usingBow={} equipingBow={} bowEquipped={} "
         "waitingAutoAfterEquip={} autoHeld={} holdMode={} hotkeyDown={}",
@@ -1443,7 +1354,6 @@ void BowInput::HandleAnimEvent(const RE::BSAnimationGraphEvent* ev, RE::BSTEvent
         const bool prevEquipped = BowState::IsBowEquipped();
         BowState::SetBowEquipped(true);
 
-        const bool nowEquipped = BowState::IsBowEquipped();
         const bool waiting = BowState::IsWaitingAutoAfterEquip();
         const bool usingBow = BowState::IsUsingBow();
         const bool autoDraw = IsAutoDrawEnabled();
@@ -1453,41 +1363,41 @@ void BowInput::HandleAnimEvent(const RE::BSAnimationGraphEvent* ev, RE::BSTEvent
         spdlog::info(
             "[IBOW][ANIM][EnableBumper] bowEquipped {}->{} | waiting={} usingBow={} holdMode={} autoDraw={} "
             "hotkeyDown={} autoHeld={}",
-            prevEquipped, nowEquipped, waiting, usingBow, holdMode, autoDraw, hotkeyDown, BowState::IsAutoAttackHeld());
+            prevEquipped, BowState::IsBowEquipped(), waiting, usingBow, holdMode, autoDraw, hotkeyDown,
+            BowState::IsAutoAttackHeld());
 
         if (waiting && usingBow && holdMode && autoDraw && hotkeyDown) {
             spdlog::info(
                 "[IBOW][ANIM][EnableBumper] conditions met -> waitingAutoAfterEquip=false; ensure auto attack draw");
+
             BowState::SetWaitingAutoAfterEquip(false);
 
             if (!BowState::IsAutoAttackHeld()) {
                 spdlog::info(
                     "[IBOW][ANIM][EnableBumper] autoHeld=false -> SetAutoAttackHeld(true) + StartAutoAttackDraw()");
+
                 BowState::SetAutoAttackHeld(true);
                 StartAutoAttackDraw();
-            } else {
-                spdlog::info("[IBOW][ANIM][EnableBumper] autoHeld already true -> skip StartAutoAttackDraw()");
             }
-        } else {
-            spdlog::info("[IBOW][ANIM][EnableBumper] conditions NOT met -> no auto draw start");
         }
     }
 
     else if (tag == "WeaponSheathe"sv) {
         spdlog::info("[IBOW][ANIM][WeaponSheathe] calling weaponSheatheHelper()");
+
         weaponSheatheHelper();
         spdlog::info(
             "[IBOW][ANIM][WeaponSheathe] weaponSheatheHelper returned | usingBow={} bowEquipped={} "
             "pendingRestoreAfterSheathe={}",
             BowState::IsUsingBow(), BowState::IsBowEquipped(),
             ist.pendingRestoreAfterSheathe.load(std::memory_order_relaxed));
+
     }
 
     else if (tag == "bowReset"sv) {
         const bool autoDraw = IsAutoDrawEnabled();
         const bool autoHeld = BowState::IsAutoAttackHeld();
         const bool hotkeyDown = BowInput::IsHotkeyDown();
-
         spdlog::info("[IBOW][ANIM][bowReset] autoDraw={} autoHeld={} hotkeyDown={}", autoDraw, autoHeld, hotkeyDown);
 
         if (autoDraw && autoHeld && hotkeyDown) {
@@ -1498,27 +1408,13 @@ void BowInput::HandleAnimEvent(const RE::BSAnimationGraphEvent* ev, RE::BSTEvent
 
             BowState::SetAutoAttackHeld(true);
             StartAutoAttackDraw();
-        } else {
-            spdlog::info("[IBOW][ANIM][bowReset] conditions NOT met -> no restart");
         }
-    } else {
-        spdlog::info("[IBOW][ANIM] ignored tag='{}'", tag);
     }
 
     return;
 }
 
 void BowInput::IntegratedBowInputHandler::ForceImmediateExit() {
-    auto* player = RE::PlayerCharacter::GetSingleton();
-    auto* equipMgr = RE::ActorEquipManager::GetSingleton();
-
-    spdlog::info("[IBOW][FORCE_EXIT] enter player={} equipMgr={}", (void*)player, (void*)equipMgr);
-
-    if (!player || !equipMgr) {
-        spdlog::info("[IBOW][FORCE_EXIT] missing player/equipMgr -> return");
-        return;
-    }
-
     auto& ist = BowInput::Globals();
     auto& st = BowState::Get();
 
@@ -1532,30 +1428,25 @@ void BowInput::IntegratedBowInputHandler::ForceImmediateExit() {
         ist.sheathRequestedByPlayer.load(std::memory_order_relaxed),
         ist.attackHold.active.load(std::memory_order_relaxed), ist.attackHold.secs.load(std::memory_order_relaxed));
 
-    if (!st.isUsingBow) {
-        spdlog::info("[IBOW][FORCE_EXIT] not using bow -> just clear flags");
+    st.chosenBow.extra = nullptr;
 
-        ist.pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
-        ist.sheathRequestedByPlayer.store(false, std::memory_order_relaxed);
+    st.prevRight.base = nullptr;
+    st.prevRight.extra = nullptr;
+    st.prevLeft.base = nullptr;
+    st.prevLeft.extra = nullptr;
+    st.prevRightFormID = 0;
+    st.prevLeftFormID = 0;
 
-        ist.attackHold.active.store(false, std::memory_order_relaxed);
-        ist.attackHold.secs.store(0.0f, std::memory_order_relaxed);
+    st.wasCombatPosed = false;
+    st.isEquipingBow = false;
+    st.isUsingBow = false;
 
-        BowState::SetAutoAttackHeld(false);
-        BowState::SetWaitingAutoAfterEquip(false);
-        BowState::SetBowEquipped(false);
+    BowState::ClearPrevExtraEquipped();
+    BowState::ClearPrevAmmo();
 
-        spdlog::info(
-            "[IBOW][FORCE_EXIT] cleared flags (no ExitBowMode call) | bowEquipped={} waitingAutoAfterEquip={} "
-            "autoHeld={}",
-            BowState::IsBowEquipped(), BowState::IsWaitingAutoAfterEquip(), BowState::IsAutoAttackHeld());
-        return;
-    }
-
-    spdlog::info("[IBOW][FORCE_EXIT] using bow -> calling ExitBowMode()");
-    ExitBowMode(player, equipMgr, st);
-    spdlog::info("[IBOW][FORCE_EXIT] ExitBowMode returned | usingBow={} bowEquipped={}", st.isUsingBow,
-                 BowState::IsBowEquipped());
+    BowState::SetAutoAttackHeld(false);
+    BowState::SetWaitingAutoAfterEquip(false);
+    BowState::SetBowEquipped(false);
 
     ist.pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
     ist.sheathRequestedByPlayer.store(false, std::memory_order_relaxed);
@@ -1563,14 +1454,32 @@ void BowInput::IntegratedBowInputHandler::ForceImmediateExit() {
     ist.attackHold.active.store(false, std::memory_order_relaxed);
     ist.attackHold.secs.store(0.0f, std::memory_order_relaxed);
 
-    BowState::SetAutoAttackHeld(false);
-    BowState::SetWaitingAutoAfterEquip(false);
-    BowState::SetBowEquipped(false);
+    ist.exit.pending = false;
+    ist.exit.waitForEquip = false;
+    ist.exit.waitEquipTimer = 0.0f;
+    ist.exit.delayTimer = 0.0f;
+    ist.exit.delayMs = 0;
 
-    spdlog::info(
-        "[IBOW][FORCE_EXIT] exit cleared flags | bowEquipped={} waitingAutoAfterEquip={} autoHeld={} "
-        "pendingRestoreAfterSheathe={} sheathReqByPlayer={}",
-        BowState::IsBowEquipped(), BowState::IsWaitingAutoAfterEquip(), BowState::IsAutoAttackHeld(),
-        ist.pendingRestoreAfterSheathe.load(std::memory_order_relaxed),
-        ist.sheathRequestedByPlayer.load(std::memory_order_relaxed));
+    ist.hotkey.bowKeyDown.fill(false);
+    ist.hotkey.bowPadDown.fill(false);
+    ist.hotkey.kbdComboDown = false;
+    ist.hotkey.padComboDown = false;
+    ist.hotkey.hotkeyDown = false;
+
+    ist.mode.smartPending = false;
+    ist.mode.smartTimer = 0.0f;
+}
+
+bool BowInput::IsUnequipAllowed() noexcept { return BowInput::Globals().allowUnequip.load(std::memory_order_relaxed); }
+
+void BowInput::BlockUnequipForMs(std::uint64_t ms) noexcept {
+    auto& st = BowInput::Globals();
+    st.allowUnequip.store(false, std::memory_order_relaxed);
+    st.allowUnequipReenableMs.store(NowMs() + ms, std::memory_order_relaxed);
+}
+
+void BowInput::ForceAllowUnequip() noexcept {
+    auto& st = BowInput::Globals();
+    st.allowUnequip.store(true, std::memory_order_relaxed);
+    st.allowUnequipReenableMs.store(0, std::memory_order_relaxed);
 }
