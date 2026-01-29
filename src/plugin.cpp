@@ -4,6 +4,7 @@
 #endif
 
 #include <filesystem>
+#include <mutex>
 
 #include "BowConfig.h"
 #include "BowInput.h"
@@ -26,13 +27,10 @@
 namespace {
     static std::string g_pendingEssPath;  // NOSONAR
     static std::string g_currentEssPath;  // NOSONAR
-    static bool g_dbLoaded = false;       // NOSONAR
+    static std::once_flag g_dbOnce;       // NOSONAR
 
     void EnsureSaveBowDBLoaded() {
-        if (!g_dbLoaded) {
-            IntegratedBow::SaveBowDB::Get().LoadFromDisk();
-            g_dbLoaded = true;
-        }
+        std::call_once(g_dbOnce, []() { IntegratedBow::SaveBowDB::Get().LoadFromDisk(); });
     }
 
     void ApplyPrefsToConfig(const IntegratedBow::SaveBowPrefs& p) {

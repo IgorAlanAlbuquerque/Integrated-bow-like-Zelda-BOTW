@@ -29,6 +29,7 @@ namespace IntegratedBow {
     void SaveBowDB::LoadFromDisk() {
         std::scoped_lock lk(_mtx);
         _bySave.clear();
+        _loadOK = true;
 
         std::ifstream f(JsonPath());
         if (!f.is_open()) {
@@ -38,7 +39,13 @@ namespace IntegratedBow {
         nlohmann::json j;
         try {
             f >> j;
+        } catch (const std::exception& e) {
+            _loadOK = false;
+            spdlog::error("[INTEGRATEDBOW][SaveBowDB] Failed to parse {}: {}", JsonPath().string(), e.what());
+            return;
         } catch (...) {
+            _loadOK = false;
+            spdlog::error("[INTEGRATEDBOW][SaveBowDB] Failed to parse {}: unknown exception", JsonPath().string());
             return;
         }
 
@@ -84,6 +91,15 @@ namespace IntegratedBow {
 
     void SaveBowDB::SaveToDisk() {
         nlohmann::json j;
+        {
+            std::scoped_lock lk(_mtx);
+            if (!_loadOK) {
+                spdlog::warn(
+                    "[INTEGRATEDBOW][SaveBowDB] Not saving SaveBows.json because last LoadFromDisk() failed. "
+                    "Fix/restore the file to avoid data loss.");
+                return;
+            }
+        }
         {
             std::scoped_lock lk(_mtx);
 
@@ -137,5 +153,10 @@ namespace IntegratedBow {
     void SaveBowDB::EraseNormalized(std::string_view normalizedKey) {
         std::scoped_lock lk(_mtx);
         _bySave.erase(std::string{normalizedKey});
+    }
+
+    bool SaveBowDB::IsLoadOK() const {
+        std::scoped_lock lk(_mtx);
+        return _loadOK;
     }
 }

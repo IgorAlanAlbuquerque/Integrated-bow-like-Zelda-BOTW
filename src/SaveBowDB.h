@@ -28,6 +28,8 @@ namespace IntegratedBow {
         void LoadFromDisk();
         void SaveToDisk();
 
+        bool IsLoadOK() const;
+
         void Upsert(std::string_view saveKey, const SaveBowPrefs& prefs);
         bool TryGet(std::string_view saveKey, SaveBowPrefs& outPrefs) const;
         void Erase(std::string_view saveKey);
@@ -41,6 +43,8 @@ namespace IntegratedBow {
 
     private:
         SaveBowDB() = default;
+
+        bool _loadOK{true};
 
         mutable std::mutex _mtx;
         std::unordered_map<std::string, SaveBowPrefs, TransparentSaveKeyHash, std::equal_to<>> _bySave;
