@@ -11,6 +11,7 @@
 #include "BowStrings.h"
 #include "Hooks.h"
 #include "PCH.h"
+#include "SaveBowDB.h"
 #include "UI_IntegratedBow.h"
 #include "patchs/HiddenItemsPatch.h"
 #include "patchs/UnMapBlock.h"
@@ -23,6 +24,58 @@
 #endif
 
 namespace {
+    static std::string g_pendingEssPath;  // NOSONAR
+    static std::string g_currentEssPath;  // NOSONAR
+    static bool g_dbLoaded = false;       // NOSONAR
+
+    void EnsureSaveBowDBLoaded() {
+        if (!g_dbLoaded) {
+            IntegratedBow::SaveBowDB::Get().LoadFromDisk();
+            g_dbLoaded = true;
+        }
+    }
+
+    void ApplyPrefsToConfig(const IntegratedBow::SaveBowPrefs& p) {
+        auto& cfg = IntegratedBow::GetBowConfig();
+        cfg.chosenBowFormID.store(p.bow, std::memory_order_relaxed);
+        cfg.preferredArrowFormID.store(p.arrow, std::memory_order_relaxed);
+    }
+
+    IntegratedBow::SaveBowPrefs ReadPrefsFromConfig() {
+        auto const& cfg = IntegratedBow::GetBowConfig();
+        IntegratedBow::SaveBowPrefs p{};
+        p.bow = cfg.chosenBowFormID.load(std::memory_order_relaxed);
+        p.arrow = cfg.preferredArrowFormID.load(std::memory_order_relaxed);
+        return p;
+    }
+
+    std::string ExtractKey(std::string s) {
+        if (auto pos = s.find_last_of("\\/"); pos != std::string::npos) {
+            s = s.substr(pos + 1);
+        }
+        if (s.size() >= 4) {
+            auto tail = s.substr(s.size() - 4);
+            for (char& c : tail) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (tail == ".ess") {
+                s.resize(s.size() - 4);
+            }
+        }
+        return s;
+    }
+
+    std::string GetSaveKeyFromMsg(const SKSE::MessagingInterface::Message* message) {
+        if (!message || !message->data) {
+            return {};
+        }
+        const auto* p = static_cast<const char*>(message->data);
+        if (!p || !*p) {
+            return {};
+        }
+
+        std::string key = ExtractKey(std::string{p});
+        return IntegratedBow::SaveBowDB::NormalizeKey(std::move(key));
+    }
+
     void InitializeLogger() {
         if (auto path = SKSE::log::log_directory()) {
             *path /= "IntegratedBoW.log";
@@ -36,29 +89,101 @@ namespace {
     }
 
     void GlobalMessageHandler(SKSE::MessagingInterface::Message* message) {
-        if (!message) return;
-        if (message->type == SKSE::MessagingInterface::kDataLoaded) {
-            Hooks::Install_Hooks();
-            IntegratedBow_UI::Register();
-            HiddenItemsPatch::LoadConfigFile();
+        if (!message) {
+            return;
         }
-        if (message->type == SKSE::MessagingInterface::kPostLoadGame ||
-            message->type == SKSE::MessagingInterface::kNewGame) {
-            auto const& cfg = IntegratedBow::GetBowConfig();
-            UnMapBlock::SetNoLeftBlockPatch(cfg.noLeftBlockPatch);
-            HiddenItemsPatch::SetEnabled(cfg.hideEquippedFromJsonPatch);
-        }
-        if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
-            auto const& cfg = IntegratedBow::GetBowConfig();
 
-            if (const auto bowID = cfg.chosenBowFormID.load(std::memory_order_relaxed); bowID != 0) {
-                auto* bow = RE::TESForm::LookupByID<RE::TESObjectWEAP>(bowID);
-                if (bow) {
-                    BowState::LoadChosenBow(bow);
-                } else {
-                    spdlog::warn("IntegratedBow: saved bow FormID 0x{:08X} not found, ignoring", bowID);
-                }
+        switch (message->type) {
+            case SKSE::MessagingInterface::kPreLoadGame: {
+                g_pendingEssPath = GetSaveKeyFromMsg(message);
+                break;
             }
+
+            case SKSE::MessagingInterface::kDataLoaded: {
+                Hooks::Install_Hooks();
+                IntegratedBow_UI::Register();
+                HiddenItemsPatch::LoadConfigFile();
+                break;
+            }
+
+            case SKSE::MessagingInterface::kNewGame: {
+                g_pendingEssPath.clear();
+                g_currentEssPath.clear();
+
+                ApplyPrefsToConfig(IntegratedBow::SaveBowPrefs{});
+
+                auto const& cfg = IntegratedBow::GetBowConfig();
+                UnMapBlock::SetNoLeftBlockPatch(cfg.noLeftBlockPatch);
+                HiddenItemsPatch::SetEnabled(cfg.hideEquippedFromJsonPatch);
+                break;
+            }
+
+            case SKSE::MessagingInterface::kPostLoadGame: {
+                {
+                    auto const& cfg = IntegratedBow::GetBowConfig();
+                    UnMapBlock::SetNoLeftBlockPatch(cfg.noLeftBlockPatch);
+                    HiddenItemsPatch::SetEnabled(cfg.hideEquippedFromJsonPatch);
+                }
+
+                if (message->data == nullptr || g_pendingEssPath.empty()) {
+                    g_pendingEssPath.clear();
+                    break;
+                }
+
+                EnsureSaveBowDBLoaded();
+
+                g_currentEssPath = g_pendingEssPath;
+                g_pendingEssPath.clear();
+
+                IntegratedBow::SaveBowPrefs prefs{};
+                if (IntegratedBow::SaveBowDB::Get().TryGetNormalized(g_currentEssPath, prefs)) {
+                    ApplyPrefsToConfig(prefs);
+                } else {
+                    ApplyPrefsToConfig(IntegratedBow::SaveBowPrefs{});
+                }
+                break;
+            }
+
+            case SKSE::MessagingInterface::kSaveGame: {
+                EnsureSaveBowDBLoaded();
+
+                std::string key = GetSaveKeyFromMsg(message);
+                if (key.empty()) {
+                    key = g_currentEssPath;
+                }
+                if (key.empty()) {
+                    break;
+                }
+
+                const auto prefs = ReadPrefsFromConfig();
+                IntegratedBow::SaveBowDB::Get().Upsert(key, prefs);
+                IntegratedBow::SaveBowDB::Get().SaveToDisk();
+                break;
+            }
+
+            case SKSE::MessagingInterface::kDeleteGame: {
+                EnsureSaveBowDBLoaded();
+
+                std::string key = GetSaveKeyFromMsg(message);
+                if (key.empty()) {
+                    key = g_currentEssPath;
+                }
+                if (key.empty()) {
+                    break;
+                }
+
+                IntegratedBow::SaveBowDB::Get().Erase(key);
+                IntegratedBow::SaveBowDB::Get().SaveToDisk();
+
+                if (!g_currentEssPath.empty() && IntegratedBow::SaveBowDB::NormalizeKeyCopy(g_currentEssPath) ==
+                                                     IntegratedBow::SaveBowDB::NormalizeKeyCopy(key)) {
+                    g_currentEssPath.clear();
+                }
+                break;
+            }
+
+            default:
+                break;
         }
     }
 }

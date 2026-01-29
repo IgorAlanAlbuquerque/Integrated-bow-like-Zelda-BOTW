@@ -28,6 +28,7 @@ namespace IntegratedBow {
         bool noLeftBlockPatch = false;
         bool hideEquippedFromJsonPatch = false;
         bool BlockUnequip = false;
+        bool noChosenTag = false;
 
         void Load();
         void Save() const;

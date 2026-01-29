@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "integrated-bow-like-zelda-botw",
-  "dependencies": ["commonlibsse-ng", "simpleini"],
+  "dependencies": ["commonlibsse-ng", "simpleini", "nlohmann-json"],
   "builtin-baseline": "b94ab47c998b93fe72b0f501eaac70f96328019e"
 }

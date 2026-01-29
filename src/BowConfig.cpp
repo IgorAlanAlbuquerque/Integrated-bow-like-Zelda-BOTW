@@ -77,12 +77,6 @@ namespace IntegratedBow {
         gamepadButton2.store(gp2, std::memory_order_relaxed);
         gamepadButton3.store(gp3, std::memory_order_relaxed);
 
-        const int bow = _getInt(ini, "Bow", "ChosenBowFormID", 0);
-        chosenBowFormID.store(static_cast<std::uint32_t>(bow), std::memory_order_relaxed);
-
-        const int arrow = _getInt(ini, "Bow", "PreferredArrowFormID", 0);
-        preferredArrowFormID.store(static_cast<std::uint32_t>(arrow), std::memory_order_relaxed);
-
         {
             bool autoDraw = true;
 
@@ -122,6 +116,7 @@ namespace IntegratedBow {
         noLeftBlockPatch = _getBool(ini, "Patches", "NoLeftBlockPatch", false);
         hideEquippedFromJsonPatch = _getBool(ini, "Patches", "HideEquippedFromJsonPatch", false);
         BlockUnequip = _getBool(ini, "Patches", "BlockPatch", false);
+        noChosenTag = _getBool(ini, "Patches", "NoChosenTag", false);
     }
 
     void BowConfig::Save() const {
@@ -159,15 +154,13 @@ namespace IntegratedBow {
         ini.SetLongValue("Input", "GamepadButton1", static_cast<long>(gp1));
         ini.SetLongValue("Input", "GamepadButton2", static_cast<long>(gp2));
         ini.SetLongValue("Input", "GamepadButton3", static_cast<long>(gp3));
-        ini.SetLongValue("Bow", "ChosenBowFormID", static_cast<long>(chosenBowFormID.load(std::memory_order_relaxed)));
-        ini.SetLongValue("Bow", "PreferredArrowFormID",
-                         static_cast<long>(preferredArrowFormID.load(std::memory_order_relaxed)));
         ini.SetBoolValue("Input", "AutoDrawEnabled", autoDrawEnabled.load(std::memory_order_relaxed));
         ini.SetDoubleValue("Input", "SheathedDelaySeconds",
                            static_cast<double>(sheathedDelaySeconds.load(std::memory_order_relaxed)));
         ini.SetBoolValue("Patches", "NoLeftBlockPatch", noLeftBlockPatch);
         ini.SetBoolValue("Patches", "HideEquippedFromJsonPatch", hideEquippedFromJsonPatch);
         ini.SetBoolValue("Patches", "BlockPatch", BlockUnequip);
+        ini.SetBoolValue("Patches", "NoChosenTag", noChosenTag);
 
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);
