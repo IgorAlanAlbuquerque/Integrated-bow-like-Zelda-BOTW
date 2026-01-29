@@ -250,6 +250,7 @@ namespace {
         bool hideFromJson = cfg.hideEquippedFromJsonPatch;
         bool blockUnequip = cfg.BlockUnequip;
         bool noChosenTag = cfg.noChosenTag;
+        bool skipEquipBowAnim = cfg.skipEquipBowAnimationPatch.load(std::memory_order_relaxed);
 
         const auto& lbl = IntegratedBow::Strings::Get("Item_NoLeftBlockPatch", "Disable vanilla left-hand block (LT)");
         const auto& tip = IntegratedBow::Strings::Get(
@@ -315,6 +316,23 @@ namespace {
 
         ImGui::SameLine();
         ImGui::TextDisabled("%s", tipNoChosenTag.c_str());
+
+        ImGui::Separator();
+
+        const auto& lblSkipEquip =
+            IntegratedBow::Strings::Get("Item_SkipEquipBowAnimPatch", "Skip bow equip animation (SkipEquipAnimation)");
+        const auto& tipSkipEquip =
+            IntegratedBow::Strings::Get("Item_SkipEquipBowAnimPatch_Tip",
+                                        "When enabled, the plugin will set behavior graph variables to skip the equip "
+                                        "animation when entering bow mode. Requires the Skip Equip Animation mod.");
+
+        if (ImGui::Checkbox(lblSkipEquip.c_str(), &skipEquipBowAnim)) {
+            cfg.skipEquipBowAnimationPatch.store(skipEquipBowAnim, std::memory_order_relaxed);
+            dirty = true;
+        }
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", tipSkipEquip.c_str());
     }
 }
 

@@ -133,8 +133,8 @@ namespace {
                 g_currentEssPath = g_pendingEssPath;
                 g_pendingEssPath.clear();
 
-                IntegratedBow::SaveBowPrefs prefs{};
-                if (IntegratedBow::SaveBowDB::Get().TryGetNormalized(g_currentEssPath, prefs)) {
+                if (IntegratedBow::SaveBowPrefs prefs{};
+                    IntegratedBow::SaveBowDB::Get().TryGetNormalized(g_currentEssPath, prefs)) {
                     ApplyPrefsToConfig(prefs);
                 } else {
                     ApplyPrefsToConfig(IntegratedBow::SaveBowPrefs{});
