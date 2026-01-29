@@ -249,6 +249,7 @@ namespace {
         bool noLeftBlock = cfg.noLeftBlockPatch;
         bool hideFromJson = cfg.hideEquippedFromJsonPatch;
         bool blockUnequip = cfg.BlockUnequip;
+        bool noChosenTag = cfg.noChosenTag;
 
         const auto& lbl = IntegratedBow::Strings::Get("Item_NoLeftBlockPatch", "Disable vanilla left-hand block (LT)");
         const auto& tip = IntegratedBow::Strings::Get(
@@ -297,6 +298,23 @@ namespace {
 
         ImGui::SameLine();
         ImGui::TextDisabled("%s", tipBlockUnequip.c_str());
+
+        ImGui::Separator();
+
+        const auto& lblNoChosenTag =
+            IntegratedBow::Strings::Get("Item_NoChosenTagPatch", "Disable chosen-bow inventory tag");
+        const auto& tipNoChosenTag = IntegratedBow::Strings::Get(
+            "Item_NoChosenTagPatch_Tip",
+            "When enabled, the plugin will NOT apply the chosen-bow tag to the selected bow instance. "
+            "Use this if you don't want the marker/rename or if another mod expects the original instance metadata.");
+
+        if (ImGui::Checkbox(lblNoChosenTag.c_str(), &noChosenTag)) {
+            cfg.noChosenTag = noChosenTag;
+            dirty = true;
+        }
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", tipNoChosenTag.c_str());
     }
 }
 

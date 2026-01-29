@@ -632,7 +632,7 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
     st.isEquipingBow = true;
     st.isUsingBow = false;
 
-    equipMgr->EquipObject(player, bow, bowExtra, 1, nullptr, true, true, true, false);
+    equipMgr->EquipObject(player, bow, bowExtra, 1, nullptr, true, false, true, false);
 
     st.isUsingBow = true;
     st.isEquipingBow = false;
@@ -654,7 +654,7 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
         auto inv = player->GetInventory([preferred](RE::TESBoundObject& obj) { return &obj == preferred; });
 
         if (!inv.empty()) {
-            equipMgr->EquipObject(player, preferred, nullptr, 1, nullptr, true, true, true, false);
+            equipMgr->EquipObject(player, preferred, nullptr, 1, nullptr, true, false, true, false);
         }
     }
 

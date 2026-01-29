@@ -175,6 +175,8 @@ void BowState::detail::ApplyChosenTagToInstance(RE::TESBoundObject* base, RE::Ex
         return;
     }
 
+    if (IntegratedBow::GetBowConfig().noChosenTag) return;
+
     auto* tdd = extra->GetExtraTextDisplayData();
 
     const char* cstr = nullptr;
@@ -806,7 +808,7 @@ void BowState::RestorePrevWeaponsAndAmmo(RE::PlayerCharacter* player, RE::ActorE
 
         const bool queue = (rightExtra == nullptr);
 
-        equipMgr->EquipObject(player, rightBase, rightExtra, 1, nullptr, queue, true, true, false);
+        equipMgr->EquipObject(player, rightBase, rightExtra, 1, nullptr, queue, false, true, false);
     }
 
     RE::TESBoundObject* leftBase = st.prevLeft.base;
@@ -831,7 +833,7 @@ void BowState::RestorePrevWeaponsAndAmmo(RE::PlayerCharacter* player, RE::ActorE
 
         const bool queue = (leftExtra == nullptr);
 
-        equipMgr->EquipObject(player, leftBase, leftExtra, 1, nullptr, queue, true, true, false);
+        equipMgr->EquipObject(player, leftBase, leftExtra, 1, nullptr, queue, false, true, false);
     }
 
     if (!rightBase && !leftBase && st.chosenBow.base) {
@@ -840,7 +842,7 @@ void BowState::RestorePrevWeaponsAndAmmo(RE::PlayerCharacter* player, RE::ActorE
     }
 
     if (auto* prevAmmo = st.prevAmmo) {
-        equipMgr->EquipObject(player, prevAmmo, nullptr, 1, nullptr, true, true, true, false);
+        equipMgr->EquipObject(player, prevAmmo, nullptr, 1, nullptr, true, false, true, false);
     } else {
         auto* preferred = GetPreferredArrow();
         if (preferred) {

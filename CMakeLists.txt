@@ -24,6 +24,7 @@ add_commonlibsse_plugin(${PROJECT_NAME}
     src/patchs/UnMapBlock.cpp
     src/patchs/HiddenItemsPatch.cpp
     src/BowState.cpp
+    src/SaveBowDB.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
@@ -46,6 +47,7 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE
   src/UI_IntegratedBow.h
   src/patchs/UnMapBlock.h
   src/patchs/HiddenItemsPatch.h
+  src/SaveBowDB.h
 )
 
 set_source_files_properties(
