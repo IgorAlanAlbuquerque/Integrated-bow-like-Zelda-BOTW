@@ -136,7 +136,7 @@ namespace IntegratedBow {
     bool SaveBowDB::TryGetNormalized(std::string_view normalizedKey, SaveBowPrefs& outPrefs) const {
         std::scoped_lock lk(_mtx);
 
-        auto it = _bySave.find(std::string{normalizedKey});
+        auto it = _bySave.find(normalizedKey);
         if (it == _bySave.end()) {
             return false;
         }
@@ -152,7 +152,7 @@ namespace IntegratedBow {
 
     void SaveBowDB::EraseNormalized(std::string_view normalizedKey) {
         std::scoped_lock lk(_mtx);
-        _bySave.erase(std::string{normalizedKey});
+        _bySave.erase(normalizedKey);
     }
 
     bool SaveBowDB::IsLoadOK() const {
