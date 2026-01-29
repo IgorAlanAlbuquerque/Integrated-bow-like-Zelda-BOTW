@@ -29,6 +29,7 @@ namespace IntegratedBow {
         bool hideEquippedFromJsonPatch = false;
         bool BlockUnequip = false;
         bool noChosenTag = false;
+        std::atomic_bool skipEquipBowAnimationPatch{false};
 
         void Load();
         void Save() const;

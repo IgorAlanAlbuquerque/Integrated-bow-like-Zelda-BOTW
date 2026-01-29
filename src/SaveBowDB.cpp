@@ -74,8 +74,7 @@ namespace IntegratedBow {
             _bySave.try_emplace(NormalizeKey(std::string{key}), prefs);
         };
 
-        auto itSaves = j.find("saves");
-        if (itSaves != j.end() && itSaves->is_object()) {
+        if (auto itSaves = j.find("saves"); itSaves != j.end() && itSaves->is_object()) {
             for (auto it = itSaves->begin(); it != itSaves->end(); ++it) {
                 parseEntry(it.key(), it.value());
             }
