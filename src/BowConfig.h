@@ -30,6 +30,7 @@ namespace IntegratedBow {
         bool BlockUnequip = false;
         bool noChosenTag = false;
         std::atomic_bool skipEquipBowAnimationPatch{false};
+        std::atomic_bool skipEquipReturnToMeleePatch{false};
 
         void Load();
         void Save() const;

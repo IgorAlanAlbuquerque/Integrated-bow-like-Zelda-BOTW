@@ -119,6 +119,8 @@ namespace IntegratedBow {
         noChosenTag = _getBool(ini, "Patches", "NoChosenTag", false);
         skipEquipBowAnimationPatch.store(_getBool(ini, "Patches", "SkipEquipBowAnimationPatch", false),
                                          std::memory_order_relaxed);
+        skipEquipReturnToMeleePatch.store(_getBool(ini, "Patches", "SkipEquipReturnToMeleePatch", false),
+                                          std::memory_order_relaxed);
     }
 
     void BowConfig::Save() const {
@@ -165,6 +167,8 @@ namespace IntegratedBow {
         ini.SetBoolValue("Patches", "NoChosenTag", noChosenTag);
         ini.SetBoolValue("Patches", "SkipEquipBowAnimationPatch",
                          skipEquipBowAnimationPatch.load(std::memory_order_relaxed));
+        ini.SetBoolValue("Patches", "SkipEquipReturnToMeleePatch",
+                         skipEquipReturnToMeleePatch.load(std::memory_order_relaxed));
 
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);
