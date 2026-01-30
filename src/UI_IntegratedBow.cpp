@@ -251,6 +251,7 @@ namespace {
         bool blockUnequip = cfg.BlockUnequip;
         bool noChosenTag = cfg.noChosenTag;
         bool skipEquipBowAnim = cfg.skipEquipBowAnimationPatch.load(std::memory_order_relaxed);
+        bool skipReturn = cfg.skipEquipReturnToMeleePatch.load(std::memory_order_relaxed);
 
         const auto& lbl = IntegratedBow::Strings::Get("Item_NoLeftBlockPatch", "Disable vanilla left-hand block (LT)");
         const auto& tip = IntegratedBow::Strings::Get(
@@ -328,6 +329,16 @@ namespace {
 
         if (ImGui::Checkbox(lblSkipEquip.c_str(), &skipEquipBowAnim)) {
             cfg.skipEquipBowAnimationPatch.store(skipEquipBowAnim, std::memory_order_relaxed);
+            dirty = true;
+        }
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", tipSkipEquip.c_str());
+
+        ImGui::Separator();
+
+        if (ImGui::Checkbox("Skip equip animation on return to melee", &skipReturn)) {
+            cfg.skipEquipReturnToMeleePatch.store(skipReturn, std::memory_order_relaxed);
             dirty = true;
         }
 

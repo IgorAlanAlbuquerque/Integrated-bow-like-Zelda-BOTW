@@ -1,6 +1,27 @@
 #include "BowState.h"
 
+#include "patchs/SkipEquipController.h"
+
 namespace {
+    constexpr std::uint64_t kSkipReturnFallbackDisableMs = 1000;
+    constexpr std::uint64_t kSkipReturnDisableAfterMs = 200;
+
+    struct ScopedSkipEquipReturn {
+        bool enabled{false};
+
+        ScopedSkipEquipReturn(bool en, RE::PlayerCharacter* pc) : enabled(en) {
+            if (enabled) {
+                IntegratedBow::SkipEquipController::EnableAndArmDisable(pc, 0, false, kSkipReturnFallbackDisableMs);
+            }
+        }
+
+        ~ScopedSkipEquipReturn() {
+            if (enabled) {
+                IntegratedBow::SkipEquipController::ArmDisable(kSkipReturnDisableAfterMs);
+            }
+        }
+    };
+
     RE::ExtraDataList* ResolveLiveExtra(RE::TESBoundObject* base, RE::ExtraDataList* candidate) {
         if (!base || !candidate) {
             return nullptr;
@@ -783,6 +804,11 @@ void BowState::RestorePrevWeaponsAndAmmo(RE::PlayerCharacter* player, RE::ActorE
     if (!player || !equipMgr) {
         return;
     }
+
+    auto const& cfg = IntegratedBow::GetBowConfig();
+
+    const bool doSkipReturn = cfg.skipEquipReturnToMeleePatch.load(std::memory_order_relaxed);
+    ScopedSkipEquipReturn skipGuard(doSkipReturn, player);
 
     BowInput::ForceAllowUnequip();
 

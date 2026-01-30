@@ -11,6 +11,7 @@
 #include "BowState.h"
 #include "PCH.h"
 #include "patchs/HiddenItemsPatch.h"
+#include "patchs/SkipEquipController.h"
 
 using namespace std::literals;
 
@@ -19,7 +20,8 @@ namespace {
     constexpr const char* kVarSkipEquip = "SkipEquipAnimation";
     constexpr const char* kVarLoadDelay = "LoadBoundObjectDelay";
     constexpr const char* kVarSkip3D = "Skip3DLoading";
-    inline std::atomic<std::uint64_t> g_skipToken{0};  // NOSONAR
+    constexpr std::uint64_t kFakeEnableBumperDelayMs = 150;
+    constexpr std::uint64_t kDisableSkipEquipDelayMs = 500;
 
     inline void SetSkipEquipVars(RE::PlayerCharacter* pc, bool enable, int loadDelayMs = 0, bool skip3D = false) {
         if (!pc) return;
@@ -27,8 +29,11 @@ namespace {
         (void)pc->SetGraphVariableBool(kVarSkipEquip, enable);
 
         if (enable) {
-            (void)pc->SetGraphVariableInt(kVarLoadDelay, loadDelayMs);
-            (void)pc->SetGraphVariableBool(kVarSkip3D, skip3D);
+            (void)pc->SetGraphVariableInt("LoadBoundObjectDelay", loadDelayMs);
+            (void)pc->SetGraphVariableBool("Skip3DLoading", skip3D);
+        } else {
+            (void)pc->SetGraphVariableInt("LoadBoundObjectDelay", 0);
+            (void)pc->SetGraphVariableBool("Skip3DLoading", false);
         }
     }
 
@@ -308,29 +313,6 @@ namespace {
         if (until != 0 && NowMs() >= until) {
             ist.allowUnequip.store(true, std::memory_order_relaxed);
         }
-    }
-
-    inline void TickDisableSkipEquip() {
-        auto& ist = BowInput::Globals();
-
-        if (ist.disableSkipEquipAtMs == 0) {
-            return;
-        }
-
-        if (const auto now = NowMs(); now < ist.disableSkipEquipAtMs) {
-            return;
-        }
-
-        const auto token = ist.disableSkipEquipToken;
-        ist.disableSkipEquipAtMs = 0;
-        ist.disableSkipEquipToken = 0;
-
-        if (g_skipToken.load(std::memory_order_relaxed) != token) {
-            return;
-        }
-
-        auto* pc = RE::PlayerCharacter::GetSingleton();
-        SetSkipEquipVars(pc, false);
     }
 }
 
@@ -671,16 +653,9 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
     st.isUsingBow = false;
 
     auto const& cfg = IntegratedBow::GetBowConfig();
-    std::uint64_t token = 0;
 
     if (cfg.skipEquipBowAnimationPatch.load(std::memory_order_relaxed)) {
-        token = g_skipToken.fetch_add(1, std::memory_order_relaxed) + 1;
-        SetSkipEquipVars(player, true, /*LoadBoundObjectDelay*/ 0, /*Skip3DLoading*/ false);
-        ist.disableSkipEquipToken = token;
-        ist.disableSkipEquipAtMs = static_cast<std::uint32_t>(NowMs() + 500);
-    } else {
-        ist.disableSkipEquipToken = 0;
-        ist.disableSkipEquipAtMs = 0;
+        IntegratedBow::SkipEquipController::EnableAndArmDisable(player, 0, false, kDisableSkipEquipDelayMs);
     }
 
     equipMgr->EquipObject(player, bow, bowExtra, 1, nullptr, true, false, true, false);
@@ -722,7 +697,7 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
     ist.allowUnequipReenableMs.store(NowMs() + 2000, std::memory_order_relaxed);
 
     if (shouldWaitAuto && cfg.skipEquipBowAnimationPatch.load(std::memory_order_relaxed)) {
-        ist.fakeEnableBumperAtMs = NowMs() + 150;
+        ist.fakeEnableBumperAtMs = NowMs() + kFakeEnableBumperDelayMs;
     } else {
         ist.fakeEnableBumperAtMs = 0;
     }
@@ -930,7 +905,7 @@ RE::BSEventNotifyControl BowInput::IntegratedBowInputHandler::ProcessEvent(RE::I
         }
     }
 
-    TickDisableSkipEquip();
+    IntegratedBow::SkipEquipController::Tick();
 
     if (auto* equipMgr = RE::ActorEquipManager::GetSingleton(); equipMgr) {
         BowState::UpdateDeferredFinalize(player, equipMgr, dt);
