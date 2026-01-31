@@ -56,6 +56,10 @@ namespace BowInput {
         std::uint8_t postExitAttackStage{0};
         std::uint64_t postExitAttackDownAtMs{0};
         std::uint64_t postExitAttackUpAtMs{0};
+        bool prevRawKbComboDown{false};
+        bool prevRawGpComboDown{false};
+        float exclusivePendingTimer{0.0f};
+        std::uint8_t exclusivePendingSrc{0};
     };
 
     GlobalState& Globals() noexcept;
@@ -81,7 +85,6 @@ namespace BowInput {
     private:
         static void ScheduleExitBowMode(bool waitForEquip, int delayMs);
         static void ScheduleAutoAttackDraw();
-        void UpdateHotkeyState(RE::PlayerCharacter* player, bool newKbdCombo, bool newPadCombo) const;
         void HandleKeyboardButton(const RE::ButtonEvent* a_event, RE::PlayerCharacter* player) const;
         void HandleGamepadButton(const RE::ButtonEvent* a_event, RE::PlayerCharacter* player) const;
         void OnKeyPressed(RE::PlayerCharacter* player) const;
@@ -105,5 +108,6 @@ namespace BowInput {
         void ProcessInputEvents(RE::InputEvent* const* a_events, RE::PlayerCharacter* player) const;
         float CalculateDeltaTime() const;
         void ResetExitState() const;
+        void RecomputeHotkeyEdges(RE::PlayerCharacter* player, float dt) const;
     };
 }

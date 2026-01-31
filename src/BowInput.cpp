@@ -21,6 +21,84 @@ namespace {
     constexpr std::uint64_t kDisableSkipEquipDelayMs = 500;
     constexpr std::uint64_t kPostExitAttackDownDelayMs = 40;
     constexpr std::uint64_t kPostExitAttackTapMs = 60;
+    constexpr int kMaxCode = 400;
+    constexpr float kExclusiveConfirmDelaySec = 0.10f;
+
+    constexpr int kDIK_W = 0x11;
+    constexpr int kDIK_A = 0x1E;
+    constexpr int kDIK_S = 0x1F;
+    constexpr int kDIK_D = 0x20;
+
+    enum class PendingSrc : std::uint8_t { None = 0, Kb = 1, Gp = 2 };
+
+    std::array<std::atomic_bool, kMaxCode> g_kbDown{};  // NOSONAR
+    std::array<std::atomic_bool, kMaxCode> g_gpDown{};  // NOSONAR
+
+    inline bool IsAllowedExtra_Keyboard_MoveOrCamera(int code) {
+        switch (code) {
+            case kDIK_W:
+            case kDIK_A:
+            case kDIK_S:
+            case kDIK_D:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    inline bool IsAllowedExtra_Gamepad_MoveOrCamera(int) { return false; }
+
+    bool AnyEnabled(const std::array<int, BowInput::kMaxComboKeys>& a) {
+        return std::ranges::any_of(a, [](int v) { return v != -1; });
+    }
+
+    template <class DownArr>
+    bool ComboDown(const std::array<int, BowInput::kMaxComboKeys>& combo, const DownArr& down) {
+        if (!AnyEnabled(combo)) {
+            return false;
+        }
+
+        for (int code : combo) {
+            if (code == -1) {
+                continue;
+            }
+            if (code < 0 || code >= kMaxCode) {
+                return false;
+            }
+            if (!down[static_cast<std::size_t>(code)].load(std::memory_order_relaxed)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    inline bool ComboContains(const std::array<int, BowInput::kMaxComboKeys>& combo, int code) {
+        return std::ranges::contains(combo, code);
+    }
+
+    template <class DownArr, class AllowedFn>
+    bool ComboExclusiveNow(const std::array<int, BowInput::kMaxComboKeys>& combo, const DownArr& down,
+                           AllowedFn isAllowedExtra) {
+        if (!ComboDown(combo, down)) {
+            return false;
+        }
+
+        for (int code = 0; code < kMaxCode; ++code) {
+            if (!down[static_cast<std::size_t>(code)].load(std::memory_order_relaxed)) {
+                continue;
+            }
+            if (ComboContains(combo, code)) {
+                continue;
+            }
+            if (isAllowedExtra(code)) {
+                continue;
+            }
+            return false;
+        }
+
+        return true;
+    }
 
     inline std::uint64_t NowMs() noexcept {
         using clock = std::chrono::steady_clock;
@@ -327,6 +405,13 @@ namespace {
         return ue == "Left Attack Attack/Block"sv || ue == "Right Attack/Block"sv;
     }
 
+    inline void ResetPostExitAttackState(BowInput::GlobalState& st) noexcept {
+        st.postExitAttackPending = false;
+        st.postExitAttackStage = 0;
+        st.postExitAttackDownAtMs = 0;
+        st.postExitAttackUpAtMs = 0;
+    }
+
     inline void PumpPostExitAttackTap() {
         auto& ist = BowInput::Globals();
         if (!ist.postExitAttackPending) {
@@ -349,10 +434,7 @@ namespace {
             auto* ev = BowState::detail::MakeAttackButtonEvent(0.0f, 0.1f);
             BowState::detail::DispatchAttackButtonEvent(ev);
 
-            ist.postExitAttackPending = false;
-            ist.postExitAttackStage = 0;
-            ist.postExitAttackDownAtMs = 0;
-            ist.postExitAttackUpAtMs = 0;
+            ResetPostExitAttackState(ist);
         }
     }
 }
@@ -417,34 +499,8 @@ void BowInput::IntegratedBowInputHandler::HandleSmartModeReleased(RE::PlayerChar
     }
 }
 
-void BowInput::IntegratedBowInputHandler::UpdateHotkeyState(RE::PlayerCharacter* player, bool newKbdCombo,
-                                                            bool newPadCombo) const {
-    auto& st = BowInput::Globals();
-
-    const bool prevK = st.hotkey.kbdComboDown;
-    const bool prevP = st.hotkey.padComboDown;
-    const bool prevAny = prevK || prevP;
-
-    st.hotkey.kbdComboDown = newKbdCombo;
-    st.hotkey.padComboDown = newPadCombo;
-
-    const bool anyNow = st.hotkey.kbdComboDown || st.hotkey.padComboDown;
-    const bool blocked = IsInputBlockedByMenus();
-
-    if (!st.mode.smartMode) {
-        HandleNormalMode(player, anyNow, blocked);
-        return;
-    }
-
-    if (anyNow && !prevAny) {
-        HandleSmartModePressed(blocked);
-    } else if (!anyNow && prevAny) {
-        HandleSmartModeReleased(player, blocked);
-    }
-}
-
 void BowInput::IntegratedBowInputHandler::HandleKeyboardButton(const RE::ButtonEvent* a_event,
-                                                               RE::PlayerCharacter* player) const {
+                                                               RE::PlayerCharacter*) const {
     const auto code = static_cast<int>(a_event->idCode);
     auto& st = BowInput::Globals();
 
@@ -481,8 +537,7 @@ void BowInput::IntegratedBowInputHandler::HandleKeyboardButton(const RE::ButtonE
         return;
     }
 
-    const bool comboK = AreAllActiveKeysDown();
-    UpdateHotkeyState(player, comboK, st.hotkey.padComboDown);
+    st.hotkey.kbdComboDown = AreAllActiveKeysDown();
 }
 
 void BowInput::IntegratedBowInputHandler::ResetExitState() const {
@@ -496,7 +551,7 @@ void BowInput::IntegratedBowInputHandler::ResetExitState() const {
 }
 
 void BowInput::IntegratedBowInputHandler::HandleGamepadButton(const RE::ButtonEvent* a_event,
-                                                              RE::PlayerCharacter* player) const {
+                                                              RE::PlayerCharacter*) const {
     const auto code = static_cast<int>(a_event->idCode);
     auto& st = BowInput::Globals();
 
@@ -533,9 +588,7 @@ void BowInput::IntegratedBowInputHandler::HandleGamepadButton(const RE::ButtonEv
         return;
     }
 
-    const bool comboP = AreAllActivePadButtonsDown();
-
-    UpdateHotkeyState(player, st.hotkey.kbdComboDown, comboP);
+    st.hotkey.padComboDown = AreAllActivePadButtonsDown();
 }
 
 void BowInput::IntegratedBowInputHandler::OnKeyPressed(RE::PlayerCharacter* player) const {
@@ -858,13 +911,28 @@ void BowInput::IntegratedBowInputHandler::UpdateExitPending(float dt) const {
 
 void BowInput::IntegratedBowInputHandler::ProcessButtonEvent(const RE::ButtonEvent* button,
                                                              RE::PlayerCharacter* player) const {
+    if (!button || !player) {
+        return;
+    }
+
+    const auto dev = button->GetDevice();
+    const int code = button->GetIDCode();
+
+    const bool isDown = button->IsPressed();
+
+    if (dev == RE::INPUT_DEVICE::kKeyboard && (code >= 0 && code < kMaxCode)) {
+        g_kbDown[static_cast<std::size_t>(code)].store(isDown, std::memory_order_relaxed);
+
+    } else if (dev == RE::INPUT_DEVICE::kGamepad && (code >= 0 && code < kMaxCode)) {
+        g_gpDown[static_cast<std::size_t>(code)].store(isDown, std::memory_order_relaxed);
+    }
+
     if (!button->IsDown() && !button->IsUp()) {
         return;
     }
 
     auto& ist = BowInput::Globals();
     const auto& ue = button->QUserEvent();
-    const auto dev = button->GetDevice();
 
     {
         auto const& cfg = IntegratedBow::GetBowConfig();
@@ -948,9 +1016,10 @@ RE::BSEventNotifyControl BowInput::IntegratedBowInputHandler::ProcessEvent(RE::I
     float dt = CalculateDeltaTime();
 
     UpdateUnequipGate();
+    ProcessInputEvents(a_events, player);
+    RecomputeHotkeyEdges(player, dt);
     UpdateSmartMode(player, dt);
     UpdateExitPending(dt);
-    ProcessInputEvents(a_events, player);
     PumpPostExitAttackTap();
     PumpAttackHold(dt);
 
@@ -1181,4 +1250,121 @@ void BowInput::ForceAllowUnequip() noexcept {
     auto& st = BowInput::Globals();
     st.allowUnequip.store(true, std::memory_order_relaxed);
     st.allowUnequipReenableMs.store(0, std::memory_order_relaxed);
+}
+
+void BowInput::IntegratedBowInputHandler::RecomputeHotkeyEdges(RE::PlayerCharacter* player, float dt) const {
+    auto& st = BowInput::Globals();
+    auto const& cfg = IntegratedBow::GetBowConfig();
+
+    const auto& hk = st.hotkeyConfig;
+
+    const bool kbNow = ComboDown(hk.bowKeyScanCodes, g_kbDown);
+    const bool gpNow = ComboDown(hk.bowPadButtons, g_gpDown);
+    const bool rawNow = kbNow || gpNow;
+
+    st.hotkey.kbdComboDown = kbNow;
+    st.hotkey.padComboDown = gpNow;
+
+    const bool prevAccepted = st.hotkey.hotkeyDown;
+
+    bool acceptedNow = false;
+
+    if (!cfg.requireExclusiveHotkeyPatch.load(std::memory_order_relaxed)) {
+        st.exclusivePendingSrc = 0;
+        st.exclusivePendingTimer = 0.0f;
+        acceptedNow = rawNow;
+    } else {
+        if (prevAccepted) {
+            acceptedNow = rawNow;
+        } else {
+            const auto pending = static_cast<PendingSrc>(st.exclusivePendingSrc);
+
+            auto clearPending = [&]() {
+                st.exclusivePendingSrc = 0;
+                st.exclusivePendingTimer = 0.0f;
+            };
+
+            if (pending != PendingSrc::None) {
+                if (!rawNow) {
+                    bool stillExclusive = false;
+                    if (pending == PendingSrc::Kb) {
+                        stillExclusive =
+                            ComboExclusiveNow(hk.bowKeyScanCodes, g_kbDown, IsAllowedExtra_Keyboard_MoveOrCamera);
+                    } else if (pending == PendingSrc::Gp) {
+                        stillExclusive =
+                            ComboExclusiveNow(hk.bowPadButtons, g_gpDown, IsAllowedExtra_Gamepad_MoveOrCamera);
+                    }
+
+                    clearPending();
+                    acceptedNow = stillExclusive;
+                } else {
+                    bool stillExclusive = false;
+
+                    if (pending == PendingSrc::Kb) {
+                        if (!kbNow) {
+                            clearPending();
+                            acceptedNow = false;
+                        } else {
+                            stillExclusive =
+                                ComboExclusiveNow(hk.bowKeyScanCodes, g_kbDown, IsAllowedExtra_Keyboard_MoveOrCamera);
+                        }
+                    } else if (pending == PendingSrc::Gp) {
+                        if (!gpNow) {
+                            clearPending();
+                            acceptedNow = false;
+                        } else {
+                            stillExclusive =
+                                ComboExclusiveNow(hk.bowPadButtons, g_gpDown, IsAllowedExtra_Gamepad_MoveOrCamera);
+                        }
+                    }
+
+                    if (!stillExclusive) {
+                        clearPending();
+                        acceptedNow = false;
+                    } else {
+                        st.exclusivePendingTimer -= dt;
+                        if (st.exclusivePendingTimer <= 0.0f) {
+                            clearPending();
+                            acceptedNow = true;
+                        } else {
+                            acceptedNow = false;
+                        }
+                    }
+                }
+            } else {
+                const bool kbPressedEdge = kbNow && !st.prevRawKbComboDown;
+                const bool gpPressedEdge = gpNow && !st.prevRawGpComboDown;
+
+                if (kbPressedEdge &&
+                    ComboExclusiveNow(hk.bowKeyScanCodes, g_kbDown, IsAllowedExtra_Keyboard_MoveOrCamera)) {
+                    st.exclusivePendingSrc = static_cast<std::uint8_t>(PendingSrc::Kb);
+                    st.exclusivePendingTimer = kExclusiveConfirmDelaySec;
+                    acceptedNow = false;
+                } else if (gpPressedEdge &&
+                           ComboExclusiveNow(hk.bowPadButtons, g_gpDown, IsAllowedExtra_Gamepad_MoveOrCamera)) {
+                    st.exclusivePendingSrc = static_cast<std::uint8_t>(PendingSrc::Gp);
+                    st.exclusivePendingTimer = kExclusiveConfirmDelaySec;
+                    acceptedNow = false;
+                } else {
+                    acceptedNow = false;
+                }
+            }
+        }
+    }
+
+    st.prevRawKbComboDown = kbNow;
+    st.prevRawGpComboDown = gpNow;
+
+    const bool blocked = IsInputBlockedByMenus();
+
+    if (!st.mode.smartMode) {
+        HandleNormalMode(player, acceptedNow, blocked);
+        return;
+    }
+
+    if (acceptedNow && !prevAccepted) {
+        HandleSmartModePressed(blocked);
+    } else if (!acceptedNow && prevAccepted) {
+        HandleSmartModeReleased(player, blocked);
+    }
 }
