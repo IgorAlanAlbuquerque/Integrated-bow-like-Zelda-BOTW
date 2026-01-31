@@ -253,6 +253,7 @@ namespace {
         bool skipEquipBowAnim = cfg.skipEquipBowAnimationPatch.load(std::memory_order_relaxed);
         bool skipReturn = cfg.skipEquipReturnToMeleePatch.load(std::memory_order_relaxed);
         bool cancelExitDelayOnAttack = cfg.cancelHoldExitDelayOnAttackPatch.load(std::memory_order_relaxed);
+        bool exclusiveHotkey = cfg.requireExclusiveHotkeyPatch.load(std::memory_order_relaxed);
 
         const auto& lbl = IntegratedBow::Strings::Get("Item_NoLeftBlockPatch", "Disable vanilla left-hand block (LT)");
         const auto& tip = IntegratedBow::Strings::Get(
@@ -349,7 +350,7 @@ namespace {
         }
 
         ImGui::SameLine();
-        ImGui::TextDisabled("%s", tipSkipEquip.c_str());
+        ImGui::TextDisabled("%s", tipSkipReturn.c_str());
 
         const auto& lblCancelExitDelay =
             IntegratedBow::Strings::Get("Item_CancelHoldExitDelayOnAttackPatch", "Cancel hold exit delay on attack");
@@ -365,6 +366,23 @@ namespace {
         }
         ImGui::SameLine();
         ImGui::TextDisabled("%s", tipCancelExitDelay.c_str());
+
+        ImGui::Separator();
+
+        const auto& lblExclusive =
+            IntegratedBow::Strings::Get("Item_RequireExclusiveHotkeyPatch", "Require exclusive hotkey press");
+        const auto& tipExclusive =
+            IntegratedBow::Strings::Get("Item_RequireExclusiveHotkeyPatch_Tip",
+                                        "When enabled, bow mode only activates if the bow hotkey is pressed "
+                                        "exclusively (no other keys/buttons held), "
+                                        "ignoring character movement keys (WASD).");
+
+        if (ImGui::Checkbox(lblExclusive.c_str(), &exclusiveHotkey)) {
+            cfg.requireExclusiveHotkeyPatch.store(exclusiveHotkey, std::memory_order_relaxed);
+            dirty = true;
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", tipExclusive.c_str());
     }
 }
 

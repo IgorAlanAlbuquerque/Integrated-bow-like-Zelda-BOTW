@@ -32,6 +32,7 @@ namespace IntegratedBow {
         std::atomic_bool skipEquipBowAnimationPatch{false};
         std::atomic_bool skipEquipReturnToMeleePatch{false};
         std::atomic_bool cancelHoldExitDelayOnAttackPatch{false};
+        std::atomic_bool requireExclusiveHotkeyPatch{false};
 
         void Load();
         void Save() const;
