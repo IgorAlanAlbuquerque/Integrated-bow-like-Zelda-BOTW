@@ -85,7 +85,6 @@ namespace BowInput {
     private:
         static void ScheduleExitBowMode(bool waitForEquip, int delayMs);
         static void ScheduleAutoAttackDraw();
-        void UpdateHotkeyState(RE::PlayerCharacter* player, bool newKbdCombo, bool newPadCombo) const;
         void HandleKeyboardButton(const RE::ButtonEvent* a_event, RE::PlayerCharacter* player) const;
         void HandleGamepadButton(const RE::ButtonEvent* a_event, RE::PlayerCharacter* player) const;
         void OnKeyPressed(RE::PlayerCharacter* player) const;

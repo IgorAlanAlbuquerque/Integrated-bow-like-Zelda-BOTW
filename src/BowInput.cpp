@@ -49,7 +49,7 @@ namespace {
     inline bool IsAllowedExtra_Gamepad_MoveOrCamera(int) { return false; }
 
     bool AnyEnabled(const std::array<int, BowInput::kMaxComboKeys>& a) {
-        return (a[0] != -1) || (a[1] != -1) || (a[2] != -1);
+        return std::ranges::any_of(a, [](int v) { return v != -1; });
     }
 
     template <class DownArr>
