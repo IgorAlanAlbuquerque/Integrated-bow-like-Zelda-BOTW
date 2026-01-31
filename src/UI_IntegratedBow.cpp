@@ -252,6 +252,7 @@ namespace {
         bool noChosenTag = cfg.noChosenTag;
         bool skipEquipBowAnim = cfg.skipEquipBowAnimationPatch.load(std::memory_order_relaxed);
         bool skipReturn = cfg.skipEquipReturnToMeleePatch.load(std::memory_order_relaxed);
+        bool cancelExitDelayOnAttack = cfg.cancelHoldExitDelayOnAttackPatch.load(std::memory_order_relaxed);
 
         const auto& lbl = IntegratedBow::Strings::Get("Item_NoLeftBlockPatch", "Disable vanilla left-hand block (LT)");
         const auto& tip = IntegratedBow::Strings::Get(
@@ -337,6 +338,11 @@ namespace {
 
         ImGui::Separator();
 
+        const auto& tipSkipReturn = IntegratedBow::Strings::Get(
+            "Item_SkipEquipReturnToMelee_Tip",
+            "When enabled, the plugin will also skip equip animations when restoring your previous melee weapon(s) "
+            "after exiting bow mode. Requires Skip Equip Animation.");
+
         if (ImGui::Checkbox("Skip equip animation on return to melee", &skipReturn)) {
             cfg.skipEquipReturnToMeleePatch.store(skipReturn, std::memory_order_relaxed);
             dirty = true;
@@ -344,6 +350,21 @@ namespace {
 
         ImGui::SameLine();
         ImGui::TextDisabled("%s", tipSkipEquip.c_str());
+
+        const auto& lblCancelExitDelay =
+            IntegratedBow::Strings::Get("Item_CancelHoldExitDelayOnAttackPatch", "Cancel hold exit delay on attack");
+        const auto& tipCancelExitDelay = IntegratedBow::Strings::Get(
+            "Item_CancelHoldExitDelayOnAttackPatch_Tip",
+            "In Hold + Auto mode, after releasing the hotkey there is a short grace period before "
+            "exiting. If you attack during that grace period (without re-holding the hotkey), "
+            "exit bow mode immediately.");
+
+        if (ImGui::Checkbox(lblCancelExitDelay.c_str(), &cancelExitDelayOnAttack)) {
+            cfg.cancelHoldExitDelayOnAttackPatch.store(cancelExitDelayOnAttack, std::memory_order_relaxed);
+            dirty = true;
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", tipCancelExitDelay.c_str());
     }
 }
 

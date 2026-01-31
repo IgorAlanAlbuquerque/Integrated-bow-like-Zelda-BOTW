@@ -24,26 +24,29 @@ namespace {
         return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
     }
 
-    void SetSkipVars(RE::PlayerCharacter* pc, bool enable, int loadDelayMs, bool skip3D) {
+    constexpr const char* kVarSkipEquip = "SkipEquipAnimation";
+    constexpr const char* kVarLoadDelay = "LoadBoundObjectDelay";
+    constexpr const char* kVarSkip3D = "Skip3DLoading";
+
+    inline void SetSkipVars(RE::PlayerCharacter* pc, bool enable, int loadDelayMs, bool skip3D) {
         if (!pc) return;
 
-        (void)pc->SetGraphVariableBool("SkipEquipAnimation", enable);
+        (void)pc->SetGraphVariableBool(kVarSkipEquip, enable);
 
         if (enable) {
-            (void)pc->SetGraphVariableInt("LoadBoundObjectDelay", loadDelayMs);
-            (void)pc->SetGraphVariableBool("Skip3DLoading", skip3D);
+            (void)pc->SetGraphVariableInt(kVarLoadDelay, loadDelayMs);
+            (void)pc->SetGraphVariableBool(kVarSkip3D, skip3D);
         } else {
-            (void)pc->SetGraphVariableInt("LoadBoundObjectDelay", 0);
-            (void)pc->SetGraphVariableBool("Skip3DLoading", false);
+            (void)pc->SetGraphVariableInt(kVarLoadDelay, 0);
+            (void)pc->SetGraphVariableBool(kVarSkip3D, false);
         }
     }
+
 }
 
 namespace IntegratedBow::SkipEquipController {
     void Enable(RE::PlayerCharacter* pc, int loadDelayMs, bool skip3D) { SetSkipVars(pc, true, loadDelayMs, skip3D); }
-
     void Disable(RE::PlayerCharacter* pc) { SetSkipVars(pc, false, 0, false); }
-
     void EnableAndArmDisable(RE::PlayerCharacter* pc, int loadDelayMs, bool skip3D, std::uint64_t delayMs) {
         const auto token = g_skipToken.fetch_add(1, std::memory_order_relaxed) + 1;
         auto& st = GetState();

@@ -31,6 +31,7 @@ namespace IntegratedBow {
         bool noChosenTag = false;
         std::atomic_bool skipEquipBowAnimationPatch{false};
         std::atomic_bool skipEquipReturnToMeleePatch{false};
+        std::atomic_bool cancelHoldExitDelayOnAttackPatch{false};
 
         void Load();
         void Save() const;

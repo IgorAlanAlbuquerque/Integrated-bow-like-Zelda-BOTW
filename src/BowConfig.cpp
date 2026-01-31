@@ -121,6 +121,8 @@ namespace IntegratedBow {
                                          std::memory_order_relaxed);
         skipEquipReturnToMeleePatch.store(_getBool(ini, "Patches", "SkipEquipReturnToMeleePatch", false),
                                           std::memory_order_relaxed);
+        cancelHoldExitDelayOnAttackPatch.store(_getBool(ini, "Patches", "CancelHoldExitDelayOnAttackPatch", false),
+                                               std::memory_order_relaxed);
     }
 
     void BowConfig::Save() const {
@@ -169,6 +171,8 @@ namespace IntegratedBow {
                          skipEquipBowAnimationPatch.load(std::memory_order_relaxed));
         ini.SetBoolValue("Patches", "SkipEquipReturnToMeleePatch",
                          skipEquipReturnToMeleePatch.load(std::memory_order_relaxed));
+        ini.SetBoolValue("Patches", "CancelHoldExitDelayOnAttackPatch",
+                         cancelHoldExitDelayOnAttackPatch.load(std::memory_order_relaxed));
 
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);

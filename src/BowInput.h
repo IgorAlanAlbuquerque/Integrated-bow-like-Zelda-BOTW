@@ -52,6 +52,10 @@ namespace BowInput {
         std::atomic<std::uint64_t> allowUnequipReenableMs{0};
         std::atomic<std::uint64_t> lastHotkeyPressMs{0};
         std::uint64_t fakeEnableBumperAtMs{0};
+        bool postExitAttackPending{false};
+        std::uint8_t postExitAttackStage{0};
+        std::uint64_t postExitAttackDownAtMs{0};
+        std::uint64_t postExitAttackUpAtMs{0};
     };
 
     GlobalState& Globals() noexcept;
