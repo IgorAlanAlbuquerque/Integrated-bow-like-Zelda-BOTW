@@ -17,25 +17,10 @@ using namespace std::literals;
 
 namespace {
     constexpr float kSmartClickThreshold = 0.18f;
-    constexpr const char* kVarSkipEquip = "SkipEquipAnimation";
-    constexpr const char* kVarLoadDelay = "LoadBoundObjectDelay";
-    constexpr const char* kVarSkip3D = "Skip3DLoading";
     constexpr std::uint64_t kFakeEnableBumperDelayMs = 150;
     constexpr std::uint64_t kDisableSkipEquipDelayMs = 500;
-
-    inline void SetSkipEquipVars(RE::PlayerCharacter* pc, bool enable, int loadDelayMs = 0, bool skip3D = false) {
-        if (!pc) return;
-
-        (void)pc->SetGraphVariableBool(kVarSkipEquip, enable);
-
-        if (enable) {
-            (void)pc->SetGraphVariableInt("LoadBoundObjectDelay", loadDelayMs);
-            (void)pc->SetGraphVariableBool("Skip3DLoading", skip3D);
-        } else {
-            (void)pc->SetGraphVariableInt("LoadBoundObjectDelay", 0);
-            (void)pc->SetGraphVariableBool("Skip3DLoading", false);
-        }
-    }
+    constexpr std::uint64_t kPostExitAttackDownDelayMs = 40;
+    constexpr std::uint64_t kPostExitAttackTapMs = 60;
 
     inline std::uint64_t NowMs() noexcept {
         using clock = std::chrono::steady_clock;
@@ -312,6 +297,62 @@ namespace {
         const std::uint64_t until = ist.allowUnequipReenableMs.load(std::memory_order_relaxed);
         if (until != 0 && NowMs() >= until) {
             ist.allowUnequip.store(true, std::memory_order_relaxed);
+        }
+    }
+
+    inline bool IsInHoldAutoExitDelay() noexcept {
+        auto const& ist = BowInput::Globals();
+
+        if (!ist.mode.holdMode) {
+            return false;
+        }
+
+        if (!ist.exit.pending || ist.exit.delayMs <= 0) {
+            return false;
+        }
+
+        if (ist.hotkey.hotkeyDown) {
+            return false;
+        }
+
+        if (!IsAutoDrawEnabled()) {
+            return false;
+        }
+
+        const auto target = static_cast<float>(ist.exit.delayMs);
+        return ist.exit.delayTimer < target;
+    }
+
+    inline bool IsAttackEvent(std::string_view ue) noexcept {
+        return ue == "Left Attack Attack/Block"sv || ue == "Right Attack/Block"sv;
+    }
+
+    inline void PumpPostExitAttackTap() {
+        auto& ist = BowInput::Globals();
+        if (!ist.postExitAttackPending) {
+            return;
+        }
+
+        const std::uint64_t now = NowMs();
+
+        if (ist.postExitAttackStage == 0) {
+            if (ist.postExitAttackDownAtMs != 0 && now >= ist.postExitAttackDownAtMs) {
+                auto* ev = BowState::detail::MakeAttackButtonEvent(1.0f, 0.0f);
+                BowState::detail::DispatchAttackButtonEvent(ev);
+
+                ist.postExitAttackStage = 1;
+            }
+            return;
+        }
+
+        if (ist.postExitAttackStage == 1 && (ist.postExitAttackUpAtMs != 0 && now >= ist.postExitAttackUpAtMs)) {
+            auto* ev = BowState::detail::MakeAttackButtonEvent(0.0f, 0.1f);
+            BowState::detail::DispatchAttackButtonEvent(ev);
+
+            ist.postExitAttackPending = false;
+            ist.postExitAttackStage = 0;
+            ist.postExitAttackDownAtMs = 0;
+            ist.postExitAttackUpAtMs = 0;
         }
     }
 }
@@ -825,6 +866,22 @@ void BowInput::IntegratedBowInputHandler::ProcessButtonEvent(const RE::ButtonEve
     const auto& ue = button->QUserEvent();
     const auto dev = button->GetDevice();
 
+    {
+        auto const& cfg = IntegratedBow::GetBowConfig();
+        if (cfg.cancelHoldExitDelayOnAttackPatch.load(std::memory_order_relaxed) && button->IsDown() &&
+            (dev == RE::INPUT_DEVICE::kMouse || dev == RE::INPUT_DEVICE::kGamepad) && IsAttackEvent(ue) &&
+            IsInHoldAutoExitDelay() && (!ist.attackHold.active.load(std::memory_order_relaxed))) {
+            CompleteExit();
+            const std::uint64_t now = NowMs();
+            ist.postExitAttackPending = true;
+            ist.postExitAttackStage = 0;
+            ist.postExitAttackDownAtMs = now + kPostExitAttackDownDelayMs;
+            ist.postExitAttackUpAtMs = ist.postExitAttackDownAtMs + kPostExitAttackTapMs;
+
+            return;
+        }
+    }
+
     if (ue == "Shout"sv && button->IsDown() && player && IsCurrentTransformPower(player)) {
         IntegratedBowInputHandler::ForceImmediateExit();
     }
@@ -894,6 +951,7 @@ RE::BSEventNotifyControl BowInput::IntegratedBowInputHandler::ProcessEvent(RE::I
     UpdateSmartMode(player, dt);
     UpdateExitPending(dt);
     ProcessInputEvents(a_events, player);
+    PumpPostExitAttackTap();
     PumpAttackHold(dt);
 
     if (ist.fakeEnableBumperAtMs != 0 && NowMs() >= ist.fakeEnableBumperAtMs) {
