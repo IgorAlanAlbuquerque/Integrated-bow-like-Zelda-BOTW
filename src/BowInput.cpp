@@ -6,6 +6,7 @@
 #include <ranges>
 #include <string_view>
 #include <thread>
+#include <utility>
 
 #include "BowConfig.h"
 #include "BowState.h"
@@ -21,7 +22,7 @@ namespace {
     constexpr std::uint64_t kDisableSkipEquipDelayMs = 500;
     constexpr std::uint64_t kPostExitAttackDownDelayMs = 40;
     constexpr std::uint64_t kPostExitAttackTapMs = 60;
-    constexpr int kMaxCode = 400;
+    constexpr int kMaxCode = 65536;
     constexpr float kExclusiveConfirmDelaySec = 0.10f;
 
     constexpr int kDIK_W = 0x11;
@@ -33,6 +34,87 @@ namespace {
 
     std::array<std::atomic_bool, kMaxCode> g_kbDown{};  // NOSONAR
     std::array<std::atomic_bool, kMaxCode> g_gpDown{};  // NOSONAR
+
+    inline bool g_dbgGp = true;  // troque por config/atomic se quiser
+
+    inline const char* DevName(RE::INPUT_DEVICE d) {
+        switch (d) {
+            case RE::INPUT_DEVICE::kKeyboard:
+                return "kb";
+            case RE::INPUT_DEVICE::kMouse:
+                return "mouse";
+            case RE::INPUT_DEVICE::kGamepad:
+                return "gp";
+            default:
+                return "unk";
+        }
+    }
+
+    inline int NormalizePadCode(int v) noexcept { return (v >= 0) ? v : (v == -1 ? -1 : (-v - 1)); }
+
+    inline bool ComboContains(const std::array<int, BowInput::kMaxComboKeys>& combo, int code) {
+        return std::ranges::any_of(combo, [&](int v) {
+            if (v == -1) return false;
+            return NormalizePadCode(v) == code;
+        });
+    }
+
+    // Dump pequeno dos codes mais importantes
+    template <size_t N>
+    void DumpDownSet(const char* tag, const std::array<int, N>& combo, int extraCodeA = -1, int extraCodeB = -1) {
+        if (!g_dbgGp) return;
+
+        auto& st = BowInput::Globals();
+
+        auto dumpOne = [&](int raw) {
+            if (raw == -1) return;
+            const int code = NormalizePadCode(raw);
+            if (code < 0 || code >= kMaxCode) {
+                spdlog::info("[GPDBG] {} code(raw={}) -> norm={} OUT_OF_RANGE", tag, raw, code);
+                return;
+            }
+            const bool down = g_gpDown[(size_t)code].load(std::memory_order_relaxed);
+            spdlog::info("[GPDBG] {} code(raw={}) norm={} down={}", tag, raw, code, down);
+        };
+
+        spdlog::info(
+            "[GPDBG] {} -- hotkey combo raw=[{}, {}, {}] prevRawGpComboDown={} padComboDown={} hotkeyDown={} "
+            "pendingSrc={} pendingT={:.3f}",
+            tag, combo[0], combo[1], combo[2], st.prevRawGpComboDown, st.hotkey.padComboDown, st.hotkey.hotkeyDown,
+            (int)st.exclusivePendingSrc, st.exclusivePendingTimer);
+
+        dumpOne(combo[0]);
+        dumpOne(combo[1]);
+        dumpOne(combo[2]);
+
+        if (extraCodeA >= 0) {
+            const bool down = g_gpDown[(size_t)extraCodeA].load(std::memory_order_relaxed);
+            spdlog::info("[GPDBG] {} extraA code={} down={}", tag, extraCodeA, down);
+        }
+        if (extraCodeB >= 0) {
+            const bool down = g_gpDown[(size_t)extraCodeB].load(std::memory_order_relaxed);
+            spdlog::info("[GPDBG] {} extraB code={} down={}", tag, extraCodeB, down);
+        }
+    }
+
+    // Para não varrer 1024 codes em log toda hora, registre só quando “extra” aparece
+    inline void LogGpExtraIfAny(const char* tag) {
+        if (!g_dbgGp) return;
+        auto& st = BowInput::Globals();
+        const auto& hk = st.hotkeyConfig.bowPadButtons;
+
+        int found = 0;
+        for (int code = 0; code < kMaxCode; ++code) {
+            if (!g_gpDown[(size_t)code].load(std::memory_order_relaxed)) continue;
+            if (ComboContains(hk, code)) continue;
+
+            spdlog::info("[GPDBG] {} EXTRA_DOWN code={} (not in hotkey combo)", tag, code);
+            if (++found >= 8) {  // limite pra não explodir
+                spdlog::info("[GPDBG] {} EXTRA_DOWN ... (more omitted)", tag);
+                break;
+            }
+        }
+    }
 
     inline bool IsAllowedExtra_Keyboard_MoveOrCamera(int code) {
         switch (code) {
@@ -58,10 +140,11 @@ namespace {
             return false;
         }
 
-        for (int code : combo) {
-            if (code == -1) {
-                continue;
-            }
+        for (int v : combo) {
+            if (v == -1) continue;
+
+            const int code = NormalizePadCode(v);
+
             if (code < 0 || code >= kMaxCode) {
                 return false;
             }
@@ -69,34 +152,49 @@ namespace {
                 return false;
             }
         }
-
         return true;
-    }
-
-    inline bool ComboContains(const std::array<int, BowInput::kMaxComboKeys>& combo, int code) {
-        return std::ranges::contains(combo, code);
     }
 
     template <class DownArr, class AllowedFn>
     bool ComboExclusiveNow(const std::array<int, BowInput::kMaxComboKeys>& combo, const DownArr& down,
                            AllowedFn isAllowedExtra) {
         if (!ComboDown(combo, down)) {
+            if (g_dbgGp && (&down == (const DownArr*)&g_gpDown)) {  // hack simples p/ distinguir
+                spdlog::info("[GPDBG] EXCL ComboDown=false (combo not fully down)");
+                DumpDownSet("EXCL-ComboDown-false", combo);
+            }
             return false;
         }
 
         for (int code = 0; code < kMaxCode; ++code) {
-            if (!down[static_cast<std::size_t>(code)].load(std::memory_order_relaxed)) {
-                continue;
-            }
-            if (ComboContains(combo, code)) {
-                continue;
-            }
-            if (isAllowedExtra(code)) {
-                continue;
+            if (!down[(size_t)code].load(std::memory_order_relaxed)) continue;
+            if (ComboContains(combo, code)) continue;
+            if (isAllowedExtra(code)) continue;
+
+            if (g_dbgGp && (&down == (const DownArr*)&g_gpDown)) {
+                spdlog::info("[GPDBG] EXCL FAIL: extra code={} is down (not in combo, not allowed)", code);
             }
             return false;
         }
 
+        if (g_dbgGp && (&down == (const DownArr*)&g_gpDown)) {
+            spdlog::info("[GPDBG] EXCL OK: exclusive");
+        }
+        return true;
+    }
+
+    template <class DownArr, class AllowedFn>
+    bool ComboExclusiveReleaseOk(const std::array<int, BowInput::kMaxComboKeys>& combo, const DownArr& down,
+                                 AllowedFn isAllowedExtra) {
+        for (int code = 0; code < kMaxCode; ++code) {
+            if (!down[(size_t)code].load(std::memory_order_relaxed)) continue;
+
+            if (ComboContains(combo, code)) continue;
+
+            if (isAllowedExtra(code)) continue;
+
+            return false;
+        }
         return true;
     }
 
@@ -448,18 +546,19 @@ void BowInput::IntegratedBowInputHandler::HandleNormalMode(RE::PlayerCharacter* 
                                                            bool blocked) const {
     auto& st = BowInput::Globals();
 
+    if (g_dbgGp) {
+        spdlog::info("[GPDBG] HNM anyNow={} hotkeyDown={} blocked={}", anyNow, st.hotkey.hotkeyDown, blocked);
+    }
+
     if (anyNow && !st.hotkey.hotkeyDown) {
         st.hotkey.hotkeyDown = true;
+        if (g_dbgGp) spdlog::info("[GPDBG] HNM -> PRESS (calling OnKeyPressed) blocked={}", blocked);
+        if (!blocked) OnKeyPressed(player);
 
-        if (!blocked) {
-            OnKeyPressed(player);
-        }
     } else if (!anyNow && st.hotkey.hotkeyDown) {
         st.hotkey.hotkeyDown = false;
-
-        if (!blocked) {
-            OnKeyReleased();
-        }
+        if (g_dbgGp) spdlog::info("[GPDBG] HNM -> RELEASE (calling OnKeyReleased) blocked={}", blocked);
+        if (!blocked) OnKeyReleased();
     }
 }
 
@@ -506,32 +605,34 @@ void BowInput::IntegratedBowInputHandler::HandleKeyboardButton(const RE::ButtonE
 
     if (const bool captureReq = st.capture.captureRequested.load(std::memory_order_relaxed); captureReq) {
         if (a_event->IsDown()) {
-            const int encoded = code;
-            st.capture.capturedEncoded.store(encoded, std::memory_order_relaxed);
+            st.capture.capturedEncoded.store(code, std::memory_order_relaxed);
             st.capture.captureRequested.store(false, std::memory_order_relaxed);
         }
         return;
     }
 
     int idx = -1;
-    int expected = -1;
     for (int i = 0; i < kMaxComboKeys; ++i) {
-        expected = st.hotkeyConfig.bowKeyScanCodes[i];
+        const int expected = st.hotkeyConfig.bowKeyScanCodes[i];
         if (expected >= 0 && code == expected) {
             idx = i;
             break;
         }
     }
-
     if (idx < 0) {
         return;
     }
 
     if (a_event->IsDown()) {
         st.hotkey.bowKeyDown[idx] = true;
+        st.sawKbHotkeyDownThisTick = true;
+
+        st.sawKbHotkeyDownExclusiveOkThisTick =
+            ComboExclusiveNow(st.hotkeyConfig.bowKeyScanCodes, g_kbDown, IsAllowedExtra_Keyboard_MoveOrCamera);
 
     } else if (a_event->IsUp()) {
         st.hotkey.bowKeyDown[idx] = false;
+        st.sawKbHotkeyUpThisTick = true;
 
     } else {
         return;
@@ -548,47 +649,82 @@ void BowInput::IntegratedBowInputHandler::ResetExitState() const {
     st.exit.waitEquipTimer = 0.0f;
     st.exit.delayTimer = 0.0f;
     st.exit.delayMs = 0;
+    st.mode.smartPending = false;
+    st.mode.smartTimer = 0.0f;
+    st.hotkey.hotkeyDown = false;
+
+    st.prevRawKbComboDown = false;
+    st.prevRawGpComboDown = false;
+
+    st.exclusivePendingSrc = 0;
+    st.exclusivePendingTimer = 0.0f;
 }
 
 void BowInput::IntegratedBowInputHandler::HandleGamepadButton(const RE::ButtonEvent* a_event,
                                                               RE::PlayerCharacter*) const {
     const auto code = static_cast<int>(a_event->idCode);
     auto& st = BowInput::Globals();
+    const bool nowPressed = a_event->IsPressed();
 
-    if (const bool captureReq = st.capture.captureRequested.load(std::memory_order_relaxed); captureReq) {
-        if (a_event->IsDown()) {
-            const int encoded = -(code + 1);
-            st.capture.capturedEncoded.store(encoded, std::memory_order_relaxed);
-            st.capture.captureRequested.store(false, std::memory_order_relaxed);
-        }
-        return;
+    if (g_dbgGp) {
+        spdlog::info("[GPDBG] HGP enter code={} nowPressed={} IsDown={} IsUp={}", code, nowPressed, a_event->IsDown(),
+                     a_event->IsUp());
     }
 
     int idx = -1;
-    int expected = -1;
+    int expectedRawAtIdx = -1;
+    int expectedNormAtIdx = -1;
+
     for (int i = 0; i < kMaxComboKeys; ++i) {
-        expected = st.hotkeyConfig.bowPadButtons[i];
+        const int expectedRaw = st.hotkeyConfig.bowPadButtons[i];
+        if (expectedRaw == -1) continue;
+
+        const int expected = NormalizePadCode(expectedRaw);
         if (expected >= 0 && code == expected) {
             idx = i;
+            expectedRawAtIdx = expectedRaw;
+            expectedNormAtIdx = expected;
             break;
         }
     }
 
-    if (idx < 0) {
-        return;
+    if (g_dbgGp) {
+        spdlog::info("[GPDBG] HGP match idx={} expectedRaw={} expectedNorm={}", idx, expectedRawAtIdx,
+                     expectedNormAtIdx);
+        DumpDownSet("HGP-before", st.hotkeyConfig.bowPadButtons);
+        LogGpExtraIfAny("HGP-before");
     }
 
-    if (a_event->IsDown()) {
-        st.hotkey.bowPadDown[idx] = true;
+    if (idx < 0) return;
 
-    } else if (a_event->IsUp()) {
+    const bool wasPressed = st.hotkey.bowPadDown[idx];
+
+    if (nowPressed && !wasPressed) {
+        st.hotkey.bowPadDown[idx] = true;
+        st.sawGpHotkeyDownThisTick = true;
+
+        if (g_dbgGp) spdlog::info("[GPDBG] HGP idx={} DOWN edge", idx);
+
+    } else if (!nowPressed && wasPressed) {
         st.hotkey.bowPadDown[idx] = false;
+        st.sawGpHotkeyUpThisTick = true;
+
+        if (g_dbgGp) spdlog::info("[GPDBG] HGP idx={} UP edge", idx);
 
     } else {
+        if (g_dbgGp)
+            spdlog::info("[GPDBG] HGP idx={} no-change (nowPressed={} wasPressed={})", idx, nowPressed, wasPressed);
         return;
     }
 
     st.hotkey.padComboDown = AreAllActivePadButtonsDown();
+
+    if (g_dbgGp) {
+        spdlog::info("[GPDBG] HGP padComboDown={} bowPadDown=[{}, {}, {}]", st.hotkey.padComboDown,
+                     st.hotkey.bowPadDown[0], st.hotkey.bowPadDown[1], st.hotkey.bowPadDown[2]);
+        DumpDownSet("HGP-after", st.hotkeyConfig.bowPadButtons);
+        LogGpExtraIfAny("HGP-after");
+    }
 }
 
 void BowInput::IntegratedBowInputHandler::OnKeyPressed(RE::PlayerCharacter* player) const {
@@ -771,7 +907,7 @@ void BowInput::IntegratedBowInputHandler::EnterBowMode(RE::PlayerCharacter* play
     }
 
     if (auto* preferred = BowState::GetPreferredArrow()) {
-        auto inv = player->GetInventory([preferred](RE::TESBoundObject& obj) { return &obj == preferred; });
+        auto inv = player->GetInventory([preferred](RE::TESBoundObject const& obj) { return &obj == preferred; });
 
         if (!inv.empty()) {
             equipMgr->EquipObject(player, preferred, nullptr, 1, nullptr, true, false, true, false);
@@ -911,23 +1047,33 @@ void BowInput::IntegratedBowInputHandler::UpdateExitPending(float dt) const {
 
 void BowInput::IntegratedBowInputHandler::ProcessButtonEvent(const RE::ButtonEvent* button,
                                                              RE::PlayerCharacter* player) const {
-    if (!button || !player) {
-        return;
-    }
+    if (!button || !player) return;
 
     const auto dev = button->GetDevice();
-    const int code = button->GetIDCode();
+    const auto code = static_cast<int>(button->idCode);
+    const bool isPressed = button->IsPressed();
+    const bool isDownEdge = button->IsDown();
+    const bool isUpEdge = button->IsUp();
 
-    const bool isDown = button->IsPressed();
-
-    if (dev == RE::INPUT_DEVICE::kKeyboard && (code >= 0 && code < kMaxCode)) {
-        g_kbDown[static_cast<std::size_t>(code)].store(isDown, std::memory_order_relaxed);
-
-    } else if (dev == RE::INPUT_DEVICE::kGamepad && (code >= 0 && code < kMaxCode)) {
-        g_gpDown[static_cast<std::size_t>(code)].store(isDown, std::memory_order_relaxed);
+    if (g_dbgGp && dev == RE::INPUT_DEVICE::kGamepad) {
+        spdlog::info("[GPDBG] EVT dev={} code={} isPressed={} IsDown={} IsUp={} ue='{}'", DevName(dev), code, isPressed,
+                     isDownEdge, isUpEdge, button->QUserEvent().c_str());
     }
 
-    if (!button->IsDown() && !button->IsUp()) {
+    if (code >= 0 && code < kMaxCode) {
+        if (dev == RE::INPUT_DEVICE::kKeyboard) {
+            g_kbDown[(size_t)code].store(isPressed, std::memory_order_relaxed);
+        } else if (dev == RE::INPUT_DEVICE::kGamepad) {
+            const bool prev = g_gpDown[(size_t)code].load(std::memory_order_relaxed);
+            g_gpDown[(size_t)code].store(isPressed, std::memory_order_relaxed);
+
+            if (g_dbgGp && dev == RE::INPUT_DEVICE::kGamepad) {
+                spdlog::info("[GPDBG] DOWNSTATE code={} prev={} now={}", code, prev, isPressed);
+            }
+        }
+    }
+
+    if (!isDownEdge && !isUpEdge) {
         return;
     }
 
@@ -940,18 +1086,19 @@ void BowInput::IntegratedBowInputHandler::ProcessButtonEvent(const RE::ButtonEve
             (dev == RE::INPUT_DEVICE::kMouse || dev == RE::INPUT_DEVICE::kGamepad) && IsAttackEvent(ue) &&
             IsInHoldAutoExitDelay() && (!ist.attackHold.active.load(std::memory_order_relaxed))) {
             CompleteExit();
+
             const std::uint64_t now = NowMs();
             ist.postExitAttackPending = true;
             ist.postExitAttackStage = 0;
             ist.postExitAttackDownAtMs = now + kPostExitAttackDownDelayMs;
             ist.postExitAttackUpAtMs = ist.postExitAttackDownAtMs + kPostExitAttackTapMs;
-
             return;
         }
     }
 
-    if (ue == "Shout"sv && button->IsDown() && player && IsCurrentTransformPower(player)) {
+    if (ue == "Shout"sv && button->IsDown() && IsCurrentTransformPower(player)) {
         IntegratedBowInputHandler::ForceImmediateExit();
+        return;
     }
 
     if (ue == "Ready Weapon"sv && button->IsDown()) {
@@ -959,10 +1106,9 @@ void BowInput::IntegratedBowInputHandler::ProcessButtonEvent(const RE::ButtonEve
         const std::uint64_t now = NowMs();
         const std::uint64_t lastHotkey = ist.lastHotkeyPressMs.load(std::memory_order_relaxed);
         const bool nearHotkey = (lastHotkey != 0) && (now - lastHotkey) < 250;
-        if (dev != RE::INPUT_DEVICE::kKeyboard && dev != RE::INPUT_DEVICE::kGamepad) {
-            return;
-        }
-        if (st.isUsingBow && !ist.hotkey.hotkeyDown && !nearHotkey && BowState::IsBowEquipped() && !st.isEquipingBow) {
+
+        if ((dev == RE::INPUT_DEVICE::kKeyboard || dev == RE::INPUT_DEVICE::kGamepad) && st.isUsingBow &&
+            !ist.hotkey.hotkeyDown && !nearHotkey && BowState::IsBowEquipped() && !st.isEquipingBow) {
             ist.sheathRequestedByPlayer.store(true, std::memory_order_relaxed);
         }
     }
@@ -1255,75 +1401,138 @@ void BowInput::ForceAllowUnequip() noexcept {
 void BowInput::IntegratedBowInputHandler::RecomputeHotkeyEdges(RE::PlayerCharacter* player, float dt) const {
     auto& st = BowInput::Globals();
     auto const& cfg = IntegratedBow::GetBowConfig();
-
     const auto& hk = st.hotkeyConfig;
 
     const bool kbNow = ComboDown(hk.bowKeyScanCodes, g_kbDown);
     const bool gpNow = ComboDown(hk.bowPadButtons, g_gpDown);
     const bool rawNow = kbNow || gpNow;
 
-    st.hotkey.kbdComboDown = kbNow;
-    st.hotkey.padComboDown = gpNow;
-
     const bool prevAccepted = st.hotkey.hotkeyDown;
+
+    // Edges do combo completo (arquitetura MagicInput)
+    const bool kbPressedEdge = kbNow && !st.prevRawKbComboDown;
+    const bool gpPressedEdge = gpNow && !st.prevRawGpComboDown;
+
+    if (g_dbgGp) {
+        spdlog::info(
+            "[GPDBG] RHK BEGIN dt={:.4f} cfg.excl={} kbNow={} gpNow={} rawNow={} "
+            "prevAccepted={} prevRawKb={} prevRawGp={} kbEdge={} gpEdge={} "
+            "pendingSrc={} pendingT={:.3f} smartMode={}",
+            dt, (int)cfg.requireExclusiveHotkeyPatch.load(std::memory_order_relaxed), kbNow, gpNow, rawNow,
+            prevAccepted, st.prevRawKbComboDown, st.prevRawGpComboDown, kbPressedEdge, gpPressedEdge,
+            (int)st.exclusivePendingSrc, st.exclusivePendingTimer, (int)st.mode.smartMode);
+
+        // Ajuda MUITO: ver exatamente o estado do combo do gamepad nesse tick
+        DumpDownSet("RHK-begin", hk.bowPadButtons);
+        LogGpExtraIfAny("RHK-begin");
+    }
 
     bool acceptedNow = false;
 
-    if (!cfg.requireExclusiveHotkeyPatch.load(std::memory_order_relaxed)) {
+    const bool requireExclusive = cfg.requireExclusiveHotkeyPatch.load(std::memory_order_relaxed);
+
+    if (!requireExclusive) {
         st.exclusivePendingSrc = 0;
         st.exclusivePendingTimer = 0.0f;
         acceptedNow = rawNow;
+
+        if (g_dbgGp) {
+            spdlog::info("[GPDBG] RHK path=NON_EXCLUSIVE acceptedNow={} (rawNow)", acceptedNow);
+        }
+
     } else {
         if (prevAccepted) {
+            // Depois de aceitar, segue rawNow (mesmo comportamento do seu)
             acceptedNow = rawNow;
+
+            if (g_dbgGp) {
+                spdlog::info("[GPDBG] RHK path=PREV_ACCEPTED acceptedNow={} (rawNow)", acceptedNow);
+            }
+
         } else {
             const auto pending = static_cast<PendingSrc>(st.exclusivePendingSrc);
 
             auto clearPending = [&]() {
+                if (g_dbgGp) {
+                    spdlog::info("[GPDBG] RHK clearPending src={} t={:.3f} -> None", (int)st.exclusivePendingSrc,
+                                 st.exclusivePendingTimer);
+                }
                 st.exclusivePendingSrc = 0;
                 st.exclusivePendingTimer = 0.0f;
             };
 
             if (pending != PendingSrc::None) {
+                if (g_dbgGp) {
+                    spdlog::info("[GPDBG] RHK path=PENDING pendingSrc={} pendingT={:.3f} rawNow={}", (int)pending,
+                                 st.exclusivePendingTimer, rawNow);
+                }
+
+                // Estamos aguardando confirmar exclusividade
                 if (!rawNow) {
+                    // Combo soltou: se não tem extras (fora do combo) aceitamos no release
                     bool stillExclusive = false;
+
+                    if (pending == PendingSrc::Kb) {
+                        stillExclusive =
+                            ComboExclusiveReleaseOk(hk.bowKeyScanCodes, g_kbDown, IsAllowedExtra_Keyboard_MoveOrCamera);
+
+                    } else if (pending == PendingSrc::Gp) {
+                        stillExclusive =
+                            ComboExclusiveReleaseOk(hk.bowPadButtons, g_gpDown, IsAllowedExtra_Gamepad_MoveOrCamera);
+                    }
+
+                    if (g_dbgGp) {
+                        spdlog::info("[GPDBG] RHK pending RELEASE rawNow=0 stillExclusive={}", stillExclusive);
+                    }
+
+                    clearPending();
+                    acceptedNow = stillExclusive;
+
+                    if (g_dbgGp) {
+                        spdlog::info("[GPDBG] RHK pending RELEASE -> acceptedNow={}", acceptedNow);
+                    }
+
+                } else {
+                    // Combo ainda down: precisa continuar exclusivo até timer expirar
+                    bool stillExclusive = false;
+
                     if (pending == PendingSrc::Kb) {
                         stillExclusive =
                             ComboExclusiveNow(hk.bowKeyScanCodes, g_kbDown, IsAllowedExtra_Keyboard_MoveOrCamera);
+
                     } else if (pending == PendingSrc::Gp) {
                         stillExclusive =
                             ComboExclusiveNow(hk.bowPadButtons, g_gpDown, IsAllowedExtra_Gamepad_MoveOrCamera);
                     }
 
-                    clearPending();
-                    acceptedNow = stillExclusive;
-                } else {
-                    bool stillExclusive = false;
-
-                    if (pending == PendingSrc::Kb) {
-                        if (!kbNow) {
-                            clearPending();
-                            acceptedNow = false;
-                        } else {
-                            stillExclusive =
-                                ComboExclusiveNow(hk.bowKeyScanCodes, g_kbDown, IsAllowedExtra_Keyboard_MoveOrCamera);
-                        }
-                    } else if (pending == PendingSrc::Gp) {
-                        if (!gpNow) {
-                            clearPending();
-                            acceptedNow = false;
-                        } else {
-                            stillExclusive =
-                                ComboExclusiveNow(hk.bowPadButtons, g_gpDown, IsAllowedExtra_Gamepad_MoveOrCamera);
+                    if (g_dbgGp) {
+                        spdlog::info("[GPDBG] RHK pending HOLD rawNow=1 stillExclusive={} pendingT(before)={:.3f}",
+                                     stillExclusive, st.exclusivePendingTimer);
+                        if (pending == PendingSrc::Gp) {
+                            DumpDownSet("RHK-pending-hold", hk.bowPadButtons);
+                            LogGpExtraIfAny("RHK-pending-hold");
                         }
                     }
 
                     if (!stillExclusive) {
+                        if (g_dbgGp) {
+                            spdlog::info("[GPDBG] RHK pending HOLD -> NOT exclusive => clearPending, acceptedNow=0");
+                        }
                         clearPending();
                         acceptedNow = false;
+
                     } else {
                         st.exclusivePendingTimer -= dt;
+
+                        if (g_dbgGp) {
+                            spdlog::info("[GPDBG] RHK pending HOLD timer -= dt => pendingT(after)={:.3f}",
+                                         st.exclusivePendingTimer);
+                        }
+
                         if (st.exclusivePendingTimer <= 0.0f) {
+                            if (g_dbgGp) {
+                                spdlog::info("[GPDBG] RHK pending HOLD timer expired => acceptedNow=1");
+                            }
                             clearPending();
                             acceptedNow = true;
                         } else {
@@ -1331,40 +1540,98 @@ void BowInput::IntegratedBowInputHandler::RecomputeHotkeyEdges(RE::PlayerCharact
                         }
                     }
                 }
-            } else {
-                const bool kbPressedEdge = kbNow && !st.prevRawKbComboDown;
-                const bool gpPressedEdge = gpNow && !st.prevRawGpComboDown;
 
-                if (kbPressedEdge &&
-                    ComboExclusiveNow(hk.bowKeyScanCodes, g_kbDown, IsAllowedExtra_Keyboard_MoveOrCamera)) {
-                    st.exclusivePendingSrc = static_cast<std::uint8_t>(PendingSrc::Kb);
-                    st.exclusivePendingTimer = kExclusiveConfirmDelaySec;
-                    acceptedNow = false;
-                } else if (gpPressedEdge &&
-                           ComboExclusiveNow(hk.bowPadButtons, g_gpDown, IsAllowedExtra_Gamepad_MoveOrCamera)) {
-                    st.exclusivePendingSrc = static_cast<std::uint8_t>(PendingSrc::Gp);
-                    st.exclusivePendingTimer = kExclusiveConfirmDelaySec;
-                    acceptedNow = false;
-                } else {
-                    acceptedNow = false;
+            } else {
+                // Não há pending ainda: tentar iniciar
+                if (g_dbgGp) {
+                    spdlog::info("[GPDBG] RHK path=NO_PENDING kbEdge={} gpEdge={}", kbPressedEdge, gpPressedEdge);
+                }
+
+                if (kbPressedEdge) {
+                    const bool kbExclusive =
+                        ComboExclusiveNow(hk.bowKeyScanCodes, g_kbDown, IsAllowedExtra_Keyboard_MoveOrCamera);
+
+                    if (g_dbgGp) {
+                        spdlog::info("[GPDBG] RHK startPending? src=KB kbExclusive={}", kbExclusive);
+                    }
+
+                    if (kbExclusive) {
+                        st.exclusivePendingSrc = std::to_underlying(PendingSrc::Kb);
+                        st.exclusivePendingTimer = kExclusiveConfirmDelaySec;
+
+                        if (g_dbgGp) {
+                            spdlog::info("[GPDBG] RHK pending START src=KB timer={:.3f}", st.exclusivePendingTimer);
+                        }
+                    }
+
+                } else if (gpPressedEdge) {
+                    const bool gpExclusive =
+                        ComboExclusiveNow(hk.bowPadButtons, g_gpDown, IsAllowedExtra_Gamepad_MoveOrCamera);
+
+                    if (g_dbgGp) {
+                        spdlog::info("[GPDBG] RHK startPending? src=GP gpExclusive={}", gpExclusive);
+                        DumpDownSet("RHK-startPending-GP", hk.bowPadButtons);
+                        LogGpExtraIfAny("RHK-startPending-GP");
+                    }
+
+                    if (gpExclusive) {
+                        st.exclusivePendingSrc = std::to_underlying(PendingSrc::Gp);
+                        st.exclusivePendingTimer = kExclusiveConfirmDelaySec;
+
+                        if (g_dbgGp) {
+                            spdlog::info("[GPDBG] RHK pending START src=GP timer={:.3f}", st.exclusivePendingTimer);
+                        }
+                    }
+                }
+
+                acceptedNow = false;
+
+                if (g_dbgGp) {
+                    spdlog::info("[GPDBG] RHK noPending -> acceptedNow=0 (waiting confirm)");
                 }
             }
         }
     }
 
+    // Atualiza prevRaw (parte central do edge)
     st.prevRawKbComboDown = kbNow;
     st.prevRawGpComboDown = gpNow;
 
+    // Flags antigas (não determinam mais aceitação)
+    st.sawKbHotkeyDownThisTick = false;
+    st.sawKbHotkeyUpThisTick = false;
+    st.sawGpHotkeyDownThisTick = false;
+    st.sawGpHotkeyUpThisTick = false;
+
     const bool blocked = IsInputBlockedByMenus();
 
+    if (g_dbgGp) {
+        spdlog::info(
+            "[GPDBG] RHK END acceptedNow={} prevAccepted={} blocked={} willHandleSmart={} "
+            "hotkeyDown(before apply)={} pendingSrc={} pendingT={:.3f}",
+            acceptedNow, prevAccepted, blocked, (int)st.mode.smartMode, st.hotkey.hotkeyDown,
+            (int)st.exclusivePendingSrc, st.exclusivePendingTimer);
+    }
+
     if (!st.mode.smartMode) {
+        if (g_dbgGp) {
+            spdlog::info("[GPDBG] RHK -> HandleNormalMode(anyNow={})", acceptedNow);
+        }
         HandleNormalMode(player, acceptedNow, blocked);
         return;
     }
 
     if (acceptedNow && !prevAccepted) {
+        if (g_dbgGp) spdlog::info("[GPDBG] RHK -> HandleSmartModePressed");
         HandleSmartModePressed(blocked);
+
     } else if (!acceptedNow && prevAccepted) {
+        if (g_dbgGp) spdlog::info("[GPDBG] RHK -> HandleSmartModeReleased");
         HandleSmartModeReleased(player, blocked);
+
+    } else {
+        if (g_dbgGp)
+            spdlog::info("[GPDBG] RHK -> SmartMode no transition (acceptedNow={}, prevAccepted={})", acceptedNow,
+                         prevAccepted);
     }
 }

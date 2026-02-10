@@ -60,6 +60,12 @@ namespace BowInput {
         bool prevRawGpComboDown{false};
         float exclusivePendingTimer{0.0f};
         std::uint8_t exclusivePendingSrc{0};
+        bool sawKbHotkeyDownThisTick{false};
+        bool sawKbHotkeyUpThisTick{false};
+        bool sawGpHotkeyDownThisTick{false};
+        bool sawGpHotkeyUpThisTick{false};
+        bool sawKbHotkeyDownExclusiveOkThisTick{false};
+        bool sawGpHotkeyDownExclusiveOkThisTick{false};
     };
 
     GlobalState& Globals() noexcept;
