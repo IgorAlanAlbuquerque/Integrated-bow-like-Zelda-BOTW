@@ -66,6 +66,7 @@ namespace BowInput {
         bool sawGpHotkeyUpThisTick{false};
         bool sawKbHotkeyDownExclusiveOkThisTick{false};
         bool sawGpHotkeyDownExclusiveOkThisTick{false};
+        bool suppressHotkeyUntilReleased = false;
     };
 
     GlobalState& Globals() noexcept;

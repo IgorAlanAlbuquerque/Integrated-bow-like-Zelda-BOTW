@@ -1017,6 +1017,8 @@ bool BowInput::IntegratedBowInputHandler::IsExitDelayReady(float dt) const {
 }
 
 void BowInput::IntegratedBowInputHandler::CompleteExit() const {
+    auto& st = BowInput::Globals();
+    st.suppressHotkeyUntilReleased = true;
     if (auto* equipMgr = RE::ActorEquipManager::GetSingleton(); equipMgr) {
         auto* player = RE::PlayerCharacter::GetSingleton();
 
@@ -1412,6 +1414,24 @@ void BowInput::IntegratedBowInputHandler::RecomputeHotkeyEdges(RE::PlayerCharact
     // Edges do combo completo (arquitetura MagicInput)
     const bool kbPressedEdge = kbNow && !st.prevRawKbComboDown;
     const bool gpPressedEdge = gpNow && !st.prevRawGpComboDown;
+
+    if (st.suppressHotkeyUntilReleased) {
+        if (rawNow) {
+            // mantém prevRaw sincronizado pra não gerar edge falso
+            st.prevRawKbComboDown = kbNow;
+            st.prevRawGpComboDown = gpNow;
+
+            // também é bom matar pending aqui
+            st.exclusivePendingSrc = 0;
+            st.exclusivePendingTimer = 0.0f;
+
+            if (g_dbgGp) spdlog::info("[GPDBG] RHK SUPPRESS: waiting release rawNow=1");
+            return;  // não chama HandleNormalMode nem smart
+        } else {
+            st.suppressHotkeyUntilReleased = false;
+            if (g_dbgGp) spdlog::info("[GPDBG] RHK SUPPRESS cleared (rawNow=0)");
+        }
+    }
 
     if (g_dbgGp) {
         spdlog::info(
