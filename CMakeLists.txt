@@ -9,22 +9,25 @@ endif()
 find_package(CommonLibSSE CONFIG REQUIRED)
 add_commonlibsse_plugin(${PROJECT_NAME}
   SOURCES
-    src/PCH.cpp
     src/plugin.cpp
     src/Hooks.cpp
-    src/BowInput.cpp
+    src/bow_input/InputState.cpp
+    src/bow_input/InputGate.cpp
+    src/bow_input/HotkeyDetector.cpp
+    src/bow_input/BowModeController.cpp
+    src/bow_input/BowInputHandler.cpp
     src/Detours/detours.cpp
     src/Detours/disasm.cpp
     src/Detours/disolx64.cpp
     src/Detours/image.cpp
     src/Detours/modules.cpp
-    src/BowConfig.cpp
-    src/BowStrings.cpp
-    src/UI_IntegratedBow.cpp
+    src/config/BowConfig.cpp
+    src/menu/BowStrings.cpp
+    src/menu/UI_IntegratedBow.cpp
     src/patchs/UnMapBlock.cpp
     src/patchs/HiddenItemsPatch.cpp
     src/BowState.cpp
-    src/SaveBowDB.cpp
+    src/config/SaveBowDB.cpp
     src/patchs/SkipEquipController.cpp
 )
 
@@ -41,14 +44,18 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE
   src/PCH.h
   src/BowState.h
   src/Hooks.h
-  src/BowInput.h
-  src/BowConfig.h
-  src/BoWConfigPath.h
-  src/BowStrings.h
-  src/UI_IntegratedBow.h
+  src/bow_input/InputState.h
+  src/bow_input/InputGate.h
+  src/bow_input/HotkeyDetector.h
+  src/bow_input/BowModeController.h
+  src/bow_input/BowInputHandler.h
+  src/config/BowConfig.h
+  src/config/BoWConfigPath.h
+  src/menu/BowStrings.h
+  src/menu/UI_IntegratedBow.h
   src/patchs/UnMapBlock.h
   src/patchs/HiddenItemsPatch.h
-  src/SaveBowDB.h
+  src/config/SaveBowDB.h
   src/patchs/SkipEquipController.h
 )
 

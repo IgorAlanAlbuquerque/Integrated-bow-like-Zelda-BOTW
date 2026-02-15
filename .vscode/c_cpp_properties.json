@@ -16,7 +16,7 @@
             "cppStandard": "c++17",
             "intelliSenseMode": "windows-msvc-x64",
             "compileCommands": [
-                "${workspaceFolder}/build/release/compile_commands.json"
+                "${workspaceFolder}/build/debug/compile_commands.json"
             ]
         }
     ],
