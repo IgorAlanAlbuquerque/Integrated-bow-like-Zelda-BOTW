@@ -44,6 +44,7 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE
   src/PCH.h
   src/BowState.h
   src/Hooks.h
+  src/bow_input/BowInputTiming.h
   src/bow_input/InputState.h
   src/bow_input/InputGate.h
   src/bow_input/HotkeyDetector.h

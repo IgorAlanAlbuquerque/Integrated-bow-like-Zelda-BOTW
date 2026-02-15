@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "HotkeyDetector.h"
+#include "BowInputTiming.h"
 
 namespace RE {
     class PlayerCharacter;
@@ -47,7 +48,7 @@ namespace BowInput {
         std::uint64_t downAtMs = 0;
         std::uint64_t upAtMs = 0;
         std::uint64_t holdStartMs = 0;
-        std::uint64_t minHoldMs = 200;
+        std::uint64_t minHoldMs = BowInput::Timing::kPostExitAttackMinHoldMs;
     };
 
     class BowModeController final : public IHotkeyCallbacks {

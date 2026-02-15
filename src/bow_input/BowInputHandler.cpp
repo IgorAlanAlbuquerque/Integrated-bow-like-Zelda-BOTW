@@ -8,18 +8,17 @@
 #include "../PCH.h"
 #include "../config/BowConfig.h"
 #include "../patchs/SkipEquipController.h"
+#include "BowInputTiming.h"
 #include "BowModeController.h"
 #include "HotkeyDetector.h"
 #include "InputGate.h"
 #include "InputState.h"
+using namespace BowInput::Timing;
 
 using namespace std::literals;
 
 namespace BowInput {
     namespace {
-        constexpr std::uint64_t kPostExitAttackDownDelayMs = 100;
-        constexpr std::uint64_t kPostExitAttackTapMs = 200;
-
         inline std::uint64_t NowMs() noexcept {
             using clock = std::chrono::steady_clock;
             return static_cast<std::uint64_t>(

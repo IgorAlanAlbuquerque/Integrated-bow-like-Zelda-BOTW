@@ -7,18 +7,16 @@
 #include "../config/BowConfig.h"
 #include "../patchs/HiddenItemsPatch.h"
 #include "../patchs/SkipEquipController.h"
+#include "BowInputTiming.h"
 #include "BowState.h"
 #include "InputGate.h"
+using namespace BowInput::Timing;
 
 using namespace std::literals;
 
 namespace BowInput {
     namespace {
         constexpr float kSmartClickThreshold = 0.18f;
-        constexpr std::uint64_t kFakeEnableBumperDelayMs = 200;
-        constexpr std::uint64_t kDisableSkipEquipDelayMs = 500;
-        constexpr std::uint64_t kPostExitAttackDownDelayMs = 1000;
-        constexpr std::uint64_t kPostExitAttackTapMs = 2000;
 
         inline std::uint64_t NowMs() noexcept {
             using clock = std::chrono::steady_clock;
