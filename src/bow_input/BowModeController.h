@@ -17,8 +17,6 @@ namespace BowState {
 }
 
 namespace BowInput {
-    static std::atomic_bool g_attackSwingDetected{false};
-
     struct ModeState {
         bool holdMode = true;
         bool smartMode = false;
@@ -38,6 +36,9 @@ namespace BowInput {
     struct AttackHoldState {
         std::atomic_bool active{false};
         std::atomic<float> secs{0.0f};
+        bool arrowAttachConfirmed = false;
+        std::uint64_t watchdogAtMs = 0;
+        std::uint8_t retryCount = 0;
     };
 
     struct PostExitAttackState {

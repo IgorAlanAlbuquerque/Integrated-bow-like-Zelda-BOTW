@@ -155,9 +155,8 @@ namespace BowInput {
         inline void ArmPendingIfEdge(const Snapshot& s, HotkeyRuntime& rt, const HotkeyConfig& hk,
                                      const InputState& inputs) {
             if (s.kbPressedEdge) {
-                const auto kbList = inputs.DownList(RE::INPUT_DEVICE::kKeyboard);
-                if (ComboExclusiveNow(hk.bowKeyScanCodes, inputs.kbDown, kbList,
-                                      IsAllowedExtra_Keyboard_MoveOrCamera)) {
+                if (const auto kbList = inputs.DownList(RE::INPUT_DEVICE::kKeyboard); ComboExclusiveNow(
+                        hk.bowKeyScanCodes, inputs.kbDown, kbList, IsAllowedExtra_Keyboard_MoveOrCamera)) {
                     rt.exclusivePendingSrc = std::to_underlying(PendingSrc::Kb);
                     rt.exclusivePendingTimer = kExclusiveConfirmDelaySec;
                 }

@@ -15,7 +15,7 @@ using namespace std::literals;
 namespace BowInput {
     namespace {
         constexpr float kSmartClickThreshold = 0.18f;
-        constexpr std::uint64_t kFakeEnableBumperDelayMs = 150;
+        constexpr std::uint64_t kFakeEnableBumperDelayMs = 200;
         constexpr std::uint64_t kDisableSkipEquipDelayMs = 500;
         constexpr std::uint64_t kPostExitAttackDownDelayMs = 1000;
         constexpr std::uint64_t kPostExitAttackTapMs = 2000;
@@ -142,6 +142,25 @@ namespace BowInput {
             return;
         }
 
+        constexpr std::uint8_t kMaxRetries = 6;
+        if (!attackHold_.arrowAttachConfirmed && attackHold_.watchdogAtMs != 0 && NowMs() >= attackHold_.watchdogAtMs) {
+            if (attackHold_.retryCount >= kMaxRetries) {
+                StopAutoAttackDraw();
+                BowState::SetAutoAttackHeld(false);
+                attackHold_.watchdogAtMs = 0;
+                attackHold_.retryCount = 0;
+                return;
+            }
+
+            attackHold_.retryCount++;
+            StopAutoAttackDraw();
+
+            attackHold_.active.store(true, std::memory_order_relaxed);
+            BowState::SetAutoAttackHeld(true);
+            StartAutoAttackDraw();
+            return;
+        }
+
         float cur = attackHold_.secs.load(std::memory_order_relaxed);
         cur += dt;
         attackHold_.secs.store(cur, std::memory_order_relaxed);
@@ -181,9 +200,6 @@ namespace BowInput {
     }
 
     void BowModeController::OnAnimEvent(std::string_view tag, RE::PlayerCharacter* player) {
-        if (tag == "weaponSwing"sv) {
-            g_attackSwingDetected.store(true, std::memory_order_relaxed);
-        }
         if (tag == "EnableBumper"sv) {
             BowState::SetBowEquipped(true);
 
@@ -214,6 +230,10 @@ namespace BowInput {
                 BowState::SetAutoAttackHeld(true);
                 StartAutoAttackDraw();
             }
+        } else if (tag == "arrowAttach"sv) {
+            attackHold_.arrowAttachConfirmed = true;
+            attackHold_.watchdogAtMs = 0;
+            attackHold_.retryCount = 0;
         }
     }
 
@@ -497,6 +517,8 @@ namespace BowInput {
         auto& ctrl = Get();
         ctrl.attackHold_.active.store(true, std::memory_order_relaxed);
         ctrl.attackHold_.secs.store(0.0f, std::memory_order_relaxed);
+        ctrl.attackHold_.arrowAttachConfirmed = false;
+        ctrl.attackHold_.watchdogAtMs = NowMs() + 400;
         ctrl.sheathRequestedByPlayer.store(false, std::memory_order_relaxed);
 
         auto* ev = BowState::detail::MakeAttackButtonEvent(1.0f, 0.0f);

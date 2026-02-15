@@ -30,6 +30,8 @@ namespace BowInput {
         static const RE::BSFixedString loadingMenu{"Loading Menu"};
         static const RE::BSFixedString mainMenu{"Main Menu"};
         static const RE::BSFixedString console{"Console"};
+        static const RE::BSFixedString dialogueMenu{"Dialogue Menu"};
+        static const RE::BSFixedString dialogueTopicMenu{"Dialogue Topic Menu"};
 
         if (static const RE::BSFixedString mcm{"Mod Configuration Menu"};
             ui->IsMenuOpen(inventoryMenu) || ui->IsMenuOpen(magicMenu) || ui->IsMenuOpen(statsMenu) ||
@@ -37,7 +39,8 @@ namespace BowInput {
             ui->IsMenuOpen(containerMenu) || ui->IsMenuOpen(barterMenu) || ui->IsMenuOpen(trainingMenu) ||
             ui->IsMenuOpen(craftingMenu) || ui->IsMenuOpen(giftMenu) || ui->IsMenuOpen(lockpickingMenu) ||
             ui->IsMenuOpen(sleepWaitMenu) || ui->IsMenuOpen(loadingMenu) || ui->IsMenuOpen(mainMenu) ||
-            ui->IsMenuOpen(console) || ui->IsMenuOpen(mcm)) {
+            ui->IsMenuOpen(console) || ui->IsMenuOpen(mcm) || ui->IsMenuOpen(dialogueMenu) ||
+            ui->IsMenuOpen(dialogueTopicMenu)) {
             return true;
         }
 
