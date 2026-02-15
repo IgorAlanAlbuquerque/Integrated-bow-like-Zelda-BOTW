@@ -4,7 +4,7 @@
 #include <queue>
 #include <ranges>
 
-#include "BowConfig.h"
+#include "config/BowConfig.h"
 #include "PCH.h"
 
 namespace RE {

@@ -2,7 +2,7 @@
 
 #include <type_traits>
 
-#include "BowInput.h"
+#include "bow_input/BowInputHandler.h"
 #include "BowState.h"
 #include "HookUtil.hpp"
 #include "PCH.h"

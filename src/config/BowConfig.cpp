@@ -5,7 +5,7 @@
 #include <string>
 
 #include "BowConfigPath.h"
-#include "PCH.h"
+#include "../PCH.h"
 
 using namespace std::string_literals;
 
@@ -21,14 +21,6 @@ namespace {
     std::string _getStr(CSimpleIniA& ini, const char* sec, const char* k, const char* defVal) {
         const char* v = ini.GetValue(sec, k, nullptr);
         return v ? std::string{v} : std::string{defVal};
-    }
-
-    float _getFloat(CSimpleIniA& ini, const char* sec, const char* k, float defVal) {
-        const char* v = ini.GetValue(sec, k, nullptr);
-        if (!v) return defVal;
-        char* end = nullptr;
-        float out = std::strtof(v, &end);
-        return end && end != v ? out : defVal;
     }
 
     bool _getBool(CSimpleIniA& ini, const char* sec, const char* k, bool defVal) {

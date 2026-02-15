@@ -4,8 +4,8 @@
 #include <sstream>
 #include <unordered_map>
 
-#include "BowConfigPath.h"
-#include "PCH.h"
+#include "../config/BowConfigPath.h"
+#include "../PCH.h"
 
 namespace IntegratedBow::Strings {
     namespace {

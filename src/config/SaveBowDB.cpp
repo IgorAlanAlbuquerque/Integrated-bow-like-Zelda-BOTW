@@ -5,7 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include "BowConfigPath.h"
-#include "PCH.h"
+#include "../PCH.h"
 
 namespace IntegratedBow {
 
