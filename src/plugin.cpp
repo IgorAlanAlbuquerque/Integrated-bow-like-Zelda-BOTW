@@ -6,13 +6,13 @@
 #include <filesystem>
 #include <mutex>
 
-#include "config/BowConfig.h"
-#include "bow_input/BowInputHandler.h"
 #include "BowState.h"
-#include "menu/BowStrings.h"
 #include "Hooks.h"
 #include "PCH.h"
+#include "bow_input/BowInputHandler.h"
+#include "config/BowConfig.h"
 #include "config/SaveBowDB.h"
+#include "menu/BowStrings.h"
 #include "menu/UI_IntegratedBow.h"
 #include "patchs/HiddenItemsPatch.h"
 #include "patchs/UnMapBlock.h"
