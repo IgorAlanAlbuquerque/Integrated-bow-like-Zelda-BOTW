@@ -11,7 +11,7 @@ namespace {
 
         ScopedSkipEquipReturn(bool en, RE::PlayerCharacter* pc) : enabled(en) {
             if (enabled) {
-                IntegratedBow::SkipEquipController::EnableAndArmDisable(pc, 0, false, kSkipReturnFallbackDisableMs);
+                IntegratedBow::SkipEquipController::EnableAndArmDisable(pc, kSkipReturnFallbackDisableMs);
             }
         }
 
@@ -807,7 +807,14 @@ void BowState::RestorePrevWeaponsAndAmmo(RE::PlayerCharacter* player, RE::ActorE
 
     auto const& cfg = IntegratedBow::GetBowConfig();
 
-    const bool doSkipReturn = cfg.skipEquipReturnToMeleePatch.load(std::memory_order_relaxed);
+    const auto hasSpell = [&]() {
+        const auto isSpell = [](RE::TESForm const* obj) {
+            if (!obj) return false;
+            return obj->Is(RE::FormType::Spell) || obj->Is(RE::FormType::Shout) || obj->Is(RE::FormType::Scroll);
+        };
+        return isSpell(st.prevRight.base) || isSpell(st.prevLeft.base);
+    };
+    const bool doSkipReturn = cfg.skipEquipReturnToMeleePatch.load(std::memory_order_relaxed) && !hasSpell();
     ScopedSkipEquipReturn skipGuard(doSkipReturn, player);
 
     BowInput::ForceAllowUnequip();

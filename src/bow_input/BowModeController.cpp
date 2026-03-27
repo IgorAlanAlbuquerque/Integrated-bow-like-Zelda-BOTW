@@ -33,6 +33,18 @@ namespace BowInput {
             if (secs < 0.0f) secs = 0.0f;
             return secs * 1000.0f;
         }
+
+        inline bool PlayerHasSpellEquipped(RE::PlayerCharacter const* player) noexcept {
+            if (!player) return false;
+            auto const* right = player->GetEquippedObject(false);
+            auto const* left = player->GetEquippedObject(true);
+            const auto isSpell = [](RE::TESForm const* obj) {
+                using enum RE::FormType;
+                if (!obj) return false;
+                return obj->Is(Spell) || obj->Is(Shout) || obj->Is(Scroll);
+            };
+            return isSpell(right) || isSpell(left);
+        }
     }
 
     BowModeController& BowModeController::Get() noexcept {
@@ -182,7 +194,7 @@ namespace BowInput {
 
         if (postExitAttack_.stage == 1) {
             std::uint64_t heldDuration = now - postExitAttack_.holdStartMs;
-            auto* evHold = BowState::detail::MakeAttackButtonEvent(1.0f, heldDuration / 1000.0f);
+            auto* evHold = BowState::detail::MakeAttackButtonEvent(1.0f, (float)heldDuration / 1000.0f);
             BowState::detail::DispatchAttackButtonEvent(evHold);
             if (heldDuration >= postExitAttack_.minHoldMs) {
                 postExitAttack_.stage = 2;
@@ -397,7 +409,7 @@ namespace BowInput {
         auto const& cfg = IntegratedBow::GetBowConfig();
 
         if (cfg.skipEquipBowAnimationPatch.load(std::memory_order_relaxed)) {
-            IntegratedBow::SkipEquipController::EnableAndArmDisable(player, 0, false, kDisableSkipEquipDelayMs);
+            IntegratedBow::SkipEquipController::EnableAndArmDisable(player, kDisableSkipEquipDelayMs);
         }
 
         equipMgr->EquipObject(player, bow, bowExtra, 1, nullptr, true, false, true, false);
@@ -507,8 +519,6 @@ namespace BowInput {
 
         mode_.smartPending = false;
         mode_.smartTimer = 0.0f;
-
-        hotkeyDown = false;
     }
 
     void BowModeController::StartAutoAttackDraw() {

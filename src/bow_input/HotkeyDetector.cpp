@@ -197,7 +197,7 @@ namespace BowInput {
 
             if (!s.rawNow) {
                 ClearPending(rt);
-                return true;
+                return false;
             }
 
             rt.exclusivePendingTimer -= dt;
