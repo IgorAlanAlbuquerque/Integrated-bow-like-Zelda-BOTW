@@ -4,8 +4,8 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 
-#include "BowConfigPath.h"
-#include "../PCH.h"
+#include "Config/ConfigPath.h"
+#include "PCH.h"
 
 namespace IntegratedBow {
 

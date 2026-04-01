@@ -2,13 +2,13 @@
 
 #include <array>
 
-#include "../config/BowConfig.h"
-#include "../bow_input/BowInputHandler.h"
-#include "BowStrings.h"
-#include "../PCH.h"
+#include "Config/Config.h"
+#include "Input/InputHandler.h"
+#include "PCH.h"
 #include "SKSEMenuFramework.h"
-#include "../patchs/HiddenItemsPatch.h"
-#include "../patchs/UnMapBlock.h"
+#include "UI/Strings.h"
+#include "patchs/HiddenItemsPatch.h"
+#include "patchs/UnMapBlock.h"
 
 using IntegratedBow::BowMode;
 using IntegratedBow::GetBowConfig;

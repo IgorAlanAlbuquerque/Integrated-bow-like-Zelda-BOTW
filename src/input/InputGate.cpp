@@ -1,9 +1,6 @@
 #include "InputGate.h"
 
-#include "RE/A/ActorState.h"
-#include "RE/B/BSFixedString.h"
-#include "RE/P/PlayerCharacter.h"
-#include "RE/U/UI.h"
+#include "PCH.h"
 
 namespace BowInput {
     bool InputGate::IsAttackEvent(std::string_view ue) noexcept {
@@ -17,12 +14,9 @@ namespace BowInput {
         auto const* st = player->AsActorState();
         if (!st) return false;
 
-        // Knocked / down / getup etc.
         if (st->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) {
             return true;
         }
-
-        // Sitting / sleeping / mounting
 
         if (const auto sit = st->GetSitSleepState();
             sit == RE::SIT_SLEEP_STATE::kIsSitting || sit == RE::SIT_SLEEP_STATE::kIsSleeping ||
@@ -32,12 +26,10 @@ namespace BowInput {
             return true;
         }
 
-        // Bleedout/essential down etc (você já tem helper)
         if (st->IsBleedingOut() || st->IsUnconscious()) {
             return true;
         }
 
-        // Diálogo "vanilla": esse flag existe no seu ActorState2
         if (st->actorState2.talkingToPlayer) {
             return true;
         }

@@ -7,15 +7,15 @@
 #include <mutex>
 
 #include "BowState.h"
+#include "Config/Config.h"
 #include "Hooks.h"
+#include "Input/InputHandler.h"
 #include "PCH.h"
-#include "bow_input/BowInputHandler.h"
-#include "config/BowConfig.h"
-#include "config/SaveBowDB.h"
-#include "menu/BowStrings.h"
-#include "menu/UI_IntegratedBow.h"
+#include "UI/Strings.h"
+#include "UI/UI_IntegratedBow.h"
 #include "patchs/HiddenItemsPatch.h"
 #include "patchs/UnMapBlock.h"
+#include "persistence/SaveBowDB.h"
 
 #ifndef DLLEXPORT
     #include "REL/Relocation.h"

@@ -8,3 +8,5 @@
 #include "SKSE/SKSE.h"
 
 using namespace std::literals;
+
+#define DEBUG

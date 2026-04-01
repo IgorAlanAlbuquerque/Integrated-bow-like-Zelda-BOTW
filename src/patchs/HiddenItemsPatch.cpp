@@ -10,7 +10,8 @@
 #include <string>
 #include <string_view>
 
-#include "../PCH.h"
+#include "Config/ConfigPath.h"
+#include "PCH.h"
 
 namespace {
     bool g_enabled = false;             // NOSONAR

@@ -1,7 +1,7 @@
 #include "BowState.h"
 
+#include "Input/InputHandler.h"
 #include "patchs/SkipEquipController.h"
-
 namespace {
     constexpr std::uint64_t kSkipReturnFallbackDisableMs = 1000;
     constexpr std::uint64_t kSkipReturnDisableAfterMs = 200;
@@ -133,6 +133,13 @@ bool BowState::detail::IsTemperingTag(std::string_view inside) {
     return false;
 }
 
+RE::ButtonEvent* BowState::detail::MakeGenericButtonEvent(RE::INPUT_DEVICE dev, const RE::BSFixedString& userEvent,
+                                                          std::uint32_t idCode, float value, float heldSecs) {
+    return RE::ButtonEvent::Create(dev, userEvent, idCode, value, heldSecs);
+}
+
+void BowState::detail::EnqueueSyntheticEvent(RE::ButtonEvent* ev) { EnqueueSyntheticAttack(ev); }
+
 void BowState::detail::TrimTrailingSpaces(std::string& s) {
     while (!s.empty() && s.back() == ' ') {
         s.pop_back();
@@ -232,7 +239,7 @@ void BowState::detail::ApplyChosenTagToInstance(RE::TESBoundObject* base, RE::Ex
     }
 
     if (!tdd) {
-        tdd = new RE::ExtraTextDisplayData(base, 1.0f);  // NOSONAR Lifetime é gerenciado pelo engine.
+        tdd = new RE::ExtraTextDisplayData(base, 1.0f);
         if (!tdd) {
             return;
         }

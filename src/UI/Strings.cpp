@@ -1,11 +1,11 @@
-#include "BowStrings.h"
+#include "Strings.h"
 
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
 
-#include "../config/BowConfigPath.h"
-#include "../PCH.h"
+#include "Config/ConfigPath.h"
+#include "PCH.h"
 
 namespace IntegratedBow::Strings {
     namespace {

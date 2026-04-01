@@ -1,0 +1,24 @@
+set(headers
+    src/plugin.cpp
+    src/Hooks.cpp
+    src/BowState.cpp
+    src/patchs/HiddenItemsPatch.cpp
+    src/patchs/SkipEquipController.cpp
+    src/patchs/UnMapBlock.cpp
+    src/UI/Strings.cpp
+    src/UI/UI_integratedBow.cpp
+    src/Config/Config.cpp
+    src/persistence/SaveBowDB.cpp
+    src/Input/InputHandler.cpp
+    src/Input/ModeController.cpp
+    src/Input/EventFilter.cpp
+    src/Input/HotkeyDetector.cpp
+    src/Input/InputGate.cpp
+    src/Input/InputState.cpp
+    src/Input/ReplayState.cpp
+    src/Detours/detours.cpp
+    src/Detours/disasm.cpp
+    src/Detours/disolx64.cpp
+    src/Detours/image.cpp
+    src/Detours/modules.cpp
+)

@@ -1,11 +1,11 @@
-#include "BowConfig.h"
+#include "Config.h"
 
 #include <SimpleIni.h>
 
 #include <string>
 
-#include "BowConfigPath.h"
-#include "../PCH.h"
+#include "Config/ConfigPath.h"
+#include "PCH.h"
 
 using namespace std::string_literals;
 

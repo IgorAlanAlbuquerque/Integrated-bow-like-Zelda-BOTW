@@ -2,16 +2,9 @@
 
 #include <cstdint>
 
-#include "HotkeyDetector.h"
-#include "BowInputTiming.h"
-
-namespace RE {
-    class PlayerCharacter;
-    class Actor;
-    class ActorEquipManager;
-    class InventoryEntryData;
-    class ExtraDataList;
-}
+#include "Input/HotkeyDetector.h"
+#include "Input/InputTiming.h"
+#include "PCH.h"
 
 namespace BowState {
     struct IntegratedBowState;
@@ -95,6 +88,7 @@ namespace BowInput {
         void UpdateUnequipGate() noexcept;
 
         void CompleteExit();
+        void ProcessSpecialEvents(RE::InputEvent* const* a_events, RE::PlayerCharacter* player);
 
     private:
         BowModeController() = default;

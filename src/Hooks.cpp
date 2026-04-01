@@ -2,9 +2,11 @@
 
 #include <type_traits>
 
-#include "bow_input/BowInputHandler.h"
 #include "BowState.h"
 #include "HookUtil.hpp"
+#include "Input/EventFilter.h"
+#include "Input/InputHandler.h"
+#include "Input/ModeController.h"
 #include "PCH.h"
 
 namespace {
@@ -19,10 +21,9 @@ namespace {
         using Fn = void(RE::ActorEquipManager*, RE::Actor*, RE::TESBoundObject*, RE::ExtraDataList*, std::uint32_t,
                         const RE::BGSEquipSlot*, bool, bool, bool, bool);
         static inline Fn* func{nullptr};
-        static void thunk(  // NOSONAR
-            RE::ActorEquipManager* a_mgr, RE::Actor* a_actor, RE::TESBoundObject* a_object,
-            RE::ExtraDataList* a_extraData, std::uint32_t a_count, const RE::BGSEquipSlot* a_slot, bool a_queueEquip,
-            bool a_forceEquip, bool a_playSounds, bool a_applyNow) {
+        static void thunk(RE::ActorEquipManager* a_mgr, RE::Actor* a_actor, RE::TESBoundObject* a_object,
+                          RE::ExtraDataList* a_extraData, std::uint32_t a_count, const RE::BGSEquipSlot* a_slot,
+                          bool a_queueEquip, bool a_forceEquip, bool a_playSounds, bool a_applyNow) {
             auto const* player = RE::PlayerCharacter::GetSingleton();
 
             if (const bool isPlayer = (player && a_actor == player); isPlayer) {
@@ -64,7 +65,7 @@ namespace {
                  a_applyNow);
         }
 
-        static void Install() { Hook::stl::write_detour<EquipObjectHook>(RE::Offset::ActorEquipManager::EquipObject); }
+        static void Install() { Hook::stl::write_detour<EquipObjectHook>(REL::RelocationID(37938, 38894)); }
     };
 
     inline std::string FormIDStr(const RE::TESForm* f) {
@@ -76,10 +77,10 @@ namespace {
                         const RE::BGSEquipSlot*, bool, bool, bool, bool, const RE::BGSEquipSlot*);
         static inline Fn* func{nullptr};
 
-        static void thunk(  // NOSONAR
-            RE::ActorEquipManager* a_mgr, RE::Actor* a_actor, RE::TESBoundObject* a_object,
-            RE::ExtraDataList* a_extraData, std::uint32_t a_count, const RE::BGSEquipSlot* a_slot, bool a_queueEquip,
-            bool a_forceEquip, bool a_playSounds, bool a_applyNow, const RE::BGSEquipSlot* a_slotToReplace) {
+        static void thunk(RE::ActorEquipManager* a_mgr, RE::Actor* a_actor, RE::TESBoundObject* a_object,
+                          RE::ExtraDataList* a_extraData, std::uint32_t a_count, const RE::BGSEquipSlot* a_slot,
+                          bool a_queueEquip, bool a_forceEquip, bool a_playSounds, bool a_applyNow,
+                          const RE::BGSEquipSlot* a_slotToReplace) {
             bool block = false;
             auto const* player = RE::PlayerCharacter::GetSingleton();
 
@@ -105,24 +106,40 @@ namespace {
                  a_applyNow, a_slotToReplace);
         }
 
-        static void Install() {
-            Hook::stl::write_detour<UnequipObjectHook>(RE::Offset::ActorEquipManager::UnequipObject);
-        }
+        static void Install() { Hook::stl::write_detour<UnequipObjectHook>(REL::RelocationID(37945, 38901)); }
     };
 
     struct PollInputDevicesHook {
         using Fn = void(RE::BSTEventSource<RE::InputEvent*>*, RE::InputEvent* const*);
         static inline std::uintptr_t func{0};
-        static void thunk(RE::BSTEventSource<RE::InputEvent*>* a_dispatcher, RE::InputEvent* const* a_events) {
-            using namespace BowState::detail;
-            RE::InputEvent* headBefore = a_events ? *a_events : nullptr;
-            RE::InputEvent* headAfter = FlushSyntheticInput(headBefore);
 
-            RE::InputEvent* const arr[2]{headAfter, nullptr};  // NOSONAR - definição padrão
-            if (func != 0) {
-                auto* original = reinterpret_cast<Fn*>(func);  // NOSONAR
-                original(a_dispatcher, arr);
-            }
+        static float CalcDt() {
+            using clock = std::chrono::steady_clock;
+            static clock::time_point s_last = clock::now();
+            const auto now = clock::now();
+            float dt = std::chrono::duration<float>(now - s_last).count();
+            s_last = now;
+            if (dt < 0.0f || dt > 0.5f) dt = 0.0f;
+            return dt;
+        }
+
+        static void thunk(RE::BSTEventSource<RE::InputEvent*>* a_dispatcher, RE::InputEvent* const* a_events) {
+            if (!a_events) return;
+
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            const float dt = CalcDt();
+
+            RE::InputEvent* head = *a_events;
+            BowInput::UpdateBowInputState(&head);
+            BowInput::HandleCaptureEvents(&head);
+            if (player) BowInput::BowModeController::Get().ProcessSpecialEvents(&head, player);
+            BowInput::FilterBowEvents(&head);
+            BowInput::ProcessBowLogic(dt);
+            BowInput::DrainBowDeferredEvents();
+            head = BowState::detail::FlushSyntheticInput(head);
+
+            RE::InputEvent* const arr[2]{head, nullptr};
+            if (func != 0) reinterpret_cast<Fn*>(func)(a_dispatcher, arr);
         }
 
         static void Install() {
@@ -151,7 +168,7 @@ namespace {
         static void Install() {
             REL::Relocation<std::uintptr_t> vtbl{RE::VTABLE_PlayerCharacter[2]};
             const std::uintptr_t orig = vtbl.write_vfunc(1, thunk);
-            _orig = reinterpret_cast<Fn>(orig);  // NOSONAR - interop
+            _orig = reinterpret_cast<Fn>(orig);
         }
     };
 }
@@ -163,6 +180,5 @@ namespace Hooks {
         UnequipObjectHook::Install();
         PollInputDevicesHook::Install();
         PlayerAnimGraphProcessEventHook::Install();
-        BowInput::RegisterInputHandler();
     }
 }

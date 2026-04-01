@@ -1,27 +1,21 @@
 #pragma once
-
 #include <cstdint>
 
-#include "InputState.h"
-
-namespace RE {
-    class PlayerCharacter;
-}
+#include "Input/InputState.h"
+#include "PCH.h"
 
 namespace BowInput {
     inline constexpr int kMaxComboKeys = 3;
 
     struct HotkeyConfig {
-        std::array<int, kMaxComboKeys> bowKeyScanCodes{};
-        std::array<int, kMaxComboKeys> bowPadButtons{};
+        std::array<int, kMaxComboKeys> bowKeyScanCodes{-1, -1, -1};
+        std::array<int, kMaxComboKeys> bowPadButtons{-1, -1, -1};
     };
 
     struct HotkeyRuntime {
         bool prevRawKbComboDown{false};
         bool prevRawGpComboDown{false};
-
         bool suppressUntilReleased{false};
-
         std::uint8_t exclusivePendingSrc{0};
         float exclusivePendingTimer{0.0f};
     };

@@ -4,14 +4,8 @@
 #include <queue>
 #include <ranges>
 
-#include "config/BowConfig.h"
+#include "Config/Config.h"
 #include "PCH.h"
-
-namespace RE {
-    class InputEvent;
-    template <class Event>
-    class BSTEventSource;
-}
 
 namespace BowState {
     namespace detail {
@@ -35,6 +29,9 @@ namespace BowState {
         void EnqueueSyntheticAttack(RE::ButtonEvent* ev);
         RE::InputEvent* FlushSyntheticInput(RE::InputEvent* head);
         void DispatchAttackButtonEvent(RE::ButtonEvent* ev);
+        RE::ButtonEvent* MakeGenericButtonEvent(RE::INPUT_DEVICE dev, const RE::BSFixedString& userEvent,
+                                                std::uint32_t idCode, float value, float heldSecs);
+        void EnqueueSyntheticEvent(RE::ButtonEvent* ev);
     }
 
     struct ChosenInstance {

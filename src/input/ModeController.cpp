@@ -1,15 +1,17 @@
-#include "BowModeController.h"
+#include "ModeController.h"
 
 #include <chrono>
 #include <string_view>
 
-#include "../PCH.h"
-#include "../config/BowConfig.h"
-#include "../patchs/HiddenItemsPatch.h"
-#include "../patchs/SkipEquipController.h"
-#include "BowInputTiming.h"
 #include "BowState.h"
-#include "InputGate.h"
+#include "Config/Config.h"
+#include "Input/HotkeyRuntime.h"
+#include "Input/InputGate.h"
+#include "Input/InputTiming.h"
+#include "PCH.h"
+#include "patchs/HiddenItemsPatch.h"
+#include "patchs/SkipEquipController.h"
+
 using namespace BowInput::Timing;
 
 using namespace std::literals;
@@ -44,6 +46,38 @@ namespace BowInput {
                 return obj->Is(Spell) || obj->Is(Shout) || obj->Is(Scroll);
             };
             return isSpell(right) || isSpell(left);
+        }
+
+        inline bool HasTransformArchetype(const RE::MagicItem* item) {
+            if (!item) return false;
+            using ArchetypeID = RE::EffectArchetypes::ArchetypeID;
+            return std::ranges::any_of(item->effects, [](const auto* effect) {
+                if (!effect || !effect->baseEffect) return false;
+                const auto arch = effect->baseEffect->GetArchetype();
+                return arch == ArchetypeID::kWerewolf || arch == ArchetypeID::kVampireLord;
+            });
+        }
+
+        inline const std::vector<RE::SpellItem*>& GetTransformPowers() {
+            static std::vector<RE::SpellItem*> s_powers;  // NOSONAR
+            if (!s_powers.empty()) return s_powers;
+            auto* dh = RE::TESDataHandler::GetSingleton();
+            if (!dh) return s_powers;
+            auto const& spells = dh->GetFormArray<RE::SpellItem>();
+            s_powers.reserve(spells.size());
+            for (auto* spell : spells) {
+                if (!spell) continue;
+                if (spell->GetSpellType() != RE::MagicSystem::SpellType::kPower) continue;
+                if (HasTransformArchetype(spell)) s_powers.push_back(spell);
+            }
+            return s_powers;
+        }
+
+        inline bool IsCurrentTransformPower(RE::Actor* actor) {
+            if (!actor) return false;
+            for (auto* power : GetTransformPowers())
+                if (actor->IsCurrentShout(power)) return true;
+            return false;
         }
     }
 
@@ -398,8 +432,8 @@ namespace BowInput {
         auto* rightEntry = player->GetEquippedEntryData(false);
         auto* leftEntry = player->GetEquippedEntryData(true);
 
-        BowState::SetPrevWeapons(rightEntry ? rightEntry->GetObject() : nullptr, GetPrimaryExtra(rightEntry),
-                                 leftEntry ? leftEntry->GetObject() : nullptr, GetPrimaryExtra(leftEntry));
+        BowState::SetPrevWeapons(rightEntry ? rightEntry->object : nullptr, GetPrimaryExtra(rightEntry),
+                                 leftEntry ? leftEntry->object : nullptr, GetPrimaryExtra(leftEntry));
 
         const bool alreadyDrawn = IsWeaponDrawn(player);
         st.wasCombatPosed = alreadyDrawn;
@@ -452,15 +486,14 @@ namespace BowInput {
     void BowModeController::ExitBowMode(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
                                         BowState::IntegratedBowState& st) {
         auto& ctrl = Get();
-
         if (!player || !equipMgr) return;
 
         ctrl.fakeEnableBumperAtMs = 0;
 
         if (!st.wasCombatPosed && !player->IsInCombat()) {
-            SetWeaponDrawn(player, false);
             ctrl.pendingRestoreAfterSheathe.store(true, std::memory_order_relaxed);
             st.isUsingBow = false;
+            SetWeaponDrawn(player, false);
             return;
         }
 
@@ -562,5 +595,57 @@ namespace BowInput {
             if (xList) return xList;
         }
         return nullptr;
+    }
+
+    void BowModeController::ProcessSpecialEvents(RE::InputEvent* const* a_events, RE::PlayerCharacter* player) {
+        if (!a_events || !player) return;
+        auto& rt = BowInput::GetHotkeyRuntimeMut();
+
+        for (auto* e = *a_events; e; e = e->next) {
+            const auto* btn = e->AsButtonEvent();
+            if (!btn || !btn->IsDown()) continue;
+
+            const auto dev = btn->GetDevice();
+            const auto& ue = btn->QUserEvent();
+
+            if (ue == "Shout"sv && IsCurrentTransformPower(player)) {
+                ForceImmediateExit();
+                rt.suppressUntilReleased = true;
+                continue;
+            }
+
+            if (ue == "Ready Weapon"sv) {
+                const auto& bowSt = BowState::Get();
+                const auto now = NowMs();
+                const auto lastHotkey = lastHotkeyPressMs.load(std::memory_order_relaxed);
+                const bool nearHotkey = (lastHotkey != 0) && (now - lastHotkey) < 250;
+                const bool isKbOrGp = (dev == RE::INPUT_DEVICE::kKeyboard || dev == RE::INPUT_DEVICE::kGamepad);
+
+                if (isKbOrGp && bowSt.isUsingBow && !hotkeyDown && !nearHotkey && BowState::IsBowEquipped() &&
+                    !bowSt.isEquipingBow) {
+                    sheathRequestedByPlayer.store(true, std::memory_order_relaxed);
+                }
+                continue;
+            }
+
+            {
+                auto const& cfg = IntegratedBow::GetBowConfig();
+                const bool isMouse = (dev == RE::INPUT_DEVICE::kMouse);
+                const bool isGp = (dev == RE::INPUT_DEVICE::kGamepad);
+
+                if (cfg.cancelHoldExitDelayOnAttackPatch.load(std::memory_order_relaxed) && (isMouse || isGp) &&
+                    InputGate::IsAttackEvent(ue) && IsInHoldAutoExitDelay() &&
+                    !attackHold_.active.load(std::memory_order_relaxed) && !postExitAttack_.pending) {
+                    CompleteExit();
+                    rt.suppressUntilReleased = true;
+
+                    const auto now = NowMs();
+                    postExitAttack_.pending = true;
+                    postExitAttack_.stage = 0;
+                    postExitAttack_.downAtMs = now + kPostExitAttackDownDelayMs;
+                    postExitAttack_.upAtMs = postExitAttack_.downAtMs + kPostExitAttackTapMs;
+                }
+            }
+        }
     }
 }

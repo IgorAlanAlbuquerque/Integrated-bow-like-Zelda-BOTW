@@ -1,0 +1,21 @@
+set(headers
+    src/Hooks.h
+    src/PCH.h
+    src/BowState.h
+    src/patchs/HiddenItemsPatch.h
+    src/patchs/SkipEquipController.h
+    src/patchs/UnMapBlock.h
+    src/UI/Strings.h
+    src/UI/UI_integratedBow.h
+    src/Config/Config.h
+    src/Config/ConfigPath.h
+    src/persistence/SaveBowDB.h
+    src/Input/InputHandler.h
+    src/Input/ModeController.h
+    src/Input/EventFilter.h
+    src/Input/HotkeyDetector.h
+    src/Input/InputGate.h
+    src/Input/InputState.h
+    src/Input/InputTiming.h
+    src/Input/ReplayState.h
+)

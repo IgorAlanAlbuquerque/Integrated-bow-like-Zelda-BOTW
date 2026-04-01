@@ -3,7 +3,9 @@
         {
             "name": "Win32",
             "includePath": [
-                "${workspaceFolder}/**"
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/build/release/vcpkg_installed/x64-windows-static-md/include",
+                "${workspaceFolder}/extern/CommonLibVR-ng/include"
             ],
             "defines": [
                 "_DEBUG",
@@ -16,7 +18,7 @@
             "cppStandard": "c++17",
             "intelliSenseMode": "windows-msvc-x64",
             "compileCommands": [
-                "${workspaceFolder}/build/debug/compile_commands.json"
+                "${workspaceFolder}/build/release/compile_commands.json"
             ]
         }
     ],
