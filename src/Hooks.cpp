@@ -2,12 +2,15 @@
 
 #include <type_traits>
 
-#include "BowState.h"
 #include "HookUtil.hpp"
 #include "Input/EventFilter.h"
+#include "Input/InputGate.h"
 #include "Input/InputHandler.h"
 #include "Input/ModeController.h"
+#include "Input/SyntheticInput.h"
 #include "PCH.h"
+#include "State/ChosenBow.h"     // SetChosenBow, SetPreferredArrow
+#include "State/SessionState.h"  // IsUsingBow, IsEquipingBow, SetUsingBow
 
 namespace {
     inline bool IsBowOrCrossbow(const RE::TESObjectWEAP* weap) {
@@ -129,11 +132,23 @@ namespace {
             auto* player = RE::PlayerCharacter::GetSingleton();
             const float dt = CalcDt();
 
+            static bool s_prevBlocked = false;
             RE::InputEvent* head = *a_events;
+            const bool blocked = BowInput::InputGate::IsInputBlockedByMenus();
+
+            if (blocked && !s_prevBlocked) {
+                BowInput::CancelIfPendingActive();
+            }
+            s_prevBlocked = blocked;
+
             BowInput::UpdateBowInputState(&head);
             BowInput::HandleCaptureEvents(&head);
-            if (player) BowInput::BowModeController::Get().ProcessSpecialEvents(&head, player);
-            BowInput::FilterBowEvents(&head);
+
+            if (!blocked) {
+                if (player) BowInput::BowModeController::Get().ProcessSpecialEvents(&head, player);
+                BowInput::FilterBowEvents(&head);
+            }
+
             BowInput::ProcessBowLogic(dt);
             BowInput::DrainBowDeferredEvents();
             head = BowState::detail::FlushSyntheticInput(head);

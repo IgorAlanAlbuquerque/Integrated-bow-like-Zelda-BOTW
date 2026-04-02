@@ -5,10 +5,10 @@
 #include "Config/Config.h"
 #include "Input/InputHandler.h"
 #include "PCH.h"
+#include "Patchs/HiddenItemsPatch.h"
+#include "Patchs/UnMapBlock.h"
 #include "SKSEMenuFramework.h"
 #include "UI/Strings.h"
-#include "patchs/HiddenItemsPatch.h"
-#include "patchs/UnMapBlock.h"
 
 using IntegratedBow::BowMode;
 using IntegratedBow::GetBowConfig;

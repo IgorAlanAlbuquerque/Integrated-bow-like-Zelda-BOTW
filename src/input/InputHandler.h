@@ -22,6 +22,7 @@ namespace BowInput {
 
     void HandleAnimEvent(const RE::BSAnimationGraphEvent* ev, RE::BSTEventSource<RE::BSAnimationGraphEvent>* src);
     void HandleCaptureEvents(RE::InputEvent** a_evns);
+    void CancelIfPendingActive();
 
     [[nodiscard]] const HotkeyConfig& GetHotkeyConfig() noexcept;
     [[nodiscard]] const HotkeyRuntime& GetHotkeyRuntime() noexcept;

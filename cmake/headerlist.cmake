@@ -1,15 +1,14 @@
 set(headers
     src/Hooks.h
     src/PCH.h
-    src/BowState.h
-    src/patchs/HiddenItemsPatch.h
-    src/patchs/SkipEquipController.h
-    src/patchs/UnMapBlock.h
+    src/Patchs/HiddenItemsPatch.h
+    src/Patchs/SkipEquipController.h
+    src/Patchs/UnMapBlock.h
     src/UI/Strings.h
     src/UI/UI_integratedBow.h
     src/Config/Config.h
     src/Config/ConfigPath.h
-    src/persistence/SaveBowDB.h
+    src/Persistence/SaveBowDB.h
     src/Input/InputHandler.h
     src/Input/ModeController.h
     src/Input/EventFilter.h
@@ -18,4 +17,8 @@ set(headers
     src/Input/InputState.h
     src/Input/InputTiming.h
     src/Input/ReplayState.h
+    src/Input/SyntheticInput.h
+    src/State/SessionState.h
+    src/State/ChosenBow.h
+    src/State/LoadoutRestore.h
 )

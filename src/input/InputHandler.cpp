@@ -5,7 +5,6 @@
 #include <ranges>
 #include <string_view>
 
-#include "BowState.h"
 #include "Config/Config.h"
 #include "Input/HotkeyDetector.h"
 #include "Input/InputGate.h"
@@ -14,7 +13,9 @@
 #include "Input/ModeController.h"
 #include "Input/ReplayState.h"
 #include "PCH.h"
-#include "patchs/SkipEquipController.h"
+#include "Patchs/SkipEquipController.h"
+#include "State/LoadoutRestore.h"
+#include "State/SessionState.h"  // IsWaitingAutoAfterEquip, IsUsingBow
 
 using namespace BowInput::Timing;
 
@@ -114,6 +115,17 @@ namespace BowInput {
         if (ctrl.fakeEnableBumperAtMs != 0 && NowMs() >= ctrl.fakeEnableBumperAtMs) {
             ctrl.fakeEnableBumperAtMs = 0;
             if (BowState::IsWaitingAutoAfterEquip() && BowState::IsUsingBow()) ctrl.OnAnimEvent("EnableBumper", player);
+        }
+
+        if (ctrl.sheathRestoreAtMs != 0 && NowMs() >= ctrl.sheathRestoreAtMs) {
+            ctrl.sheathRestoreAtMs = 0;
+            if (auto* equipMgr = RE::ActorEquipManager::GetSingleton()) {
+                auto& st = BowState::Get();
+                if (st.isUsingBow) {
+                    BowState::SetBowEquipped(false);
+                    BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st);
+                }
+            }
         }
 
         IntegratedBow::SkipEquipController::Tick();
@@ -227,6 +239,14 @@ namespace BowInput {
             g_capture.capturedEncoded.store(code, std::memory_order_relaxed);
             g_capture.requested.store(false, std::memory_order_relaxed);
             return;
+        }
+    }
+
+    void CancelIfPendingActive() {
+        if (g_hotkeyRuntime.exclusivePendingSrc != 0) {
+            g_hotkeyRuntime.exclusivePendingSrc = 0;
+            g_hotkeyRuntime.exclusivePendingTimer = 0.0f;
+            CancelBowPending();
         }
     }
 }

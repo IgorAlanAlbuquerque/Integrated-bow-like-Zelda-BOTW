@@ -1,14 +1,13 @@
 set(headers
     src/plugin.cpp
     src/Hooks.cpp
-    src/BowState.cpp
-    src/patchs/HiddenItemsPatch.cpp
-    src/patchs/SkipEquipController.cpp
-    src/patchs/UnMapBlock.cpp
+    src/Patchs/HiddenItemsPatch.cpp
+    src/Patchs/SkipEquipController.cpp
+    src/Patchs/UnMapBlock.cpp
     src/UI/Strings.cpp
     src/UI/UI_integratedBow.cpp
     src/Config/Config.cpp
-    src/persistence/SaveBowDB.cpp
+    src/Persistence/SaveBowDB.cpp
     src/Input/InputHandler.cpp
     src/Input/ModeController.cpp
     src/Input/EventFilter.cpp
@@ -16,6 +15,10 @@ set(headers
     src/Input/InputGate.cpp
     src/Input/InputState.cpp
     src/Input/ReplayState.cpp
+    src/Input/SyntheticInput.cpp
+    src/State/SessionState.cpp
+    src/State/ChosenBow.cpp
+    src/State/LoadoutRestore.cpp
     src/Detours/detours.cpp
     src/Detours/disasm.cpp
     src/Detours/disolx64.cpp

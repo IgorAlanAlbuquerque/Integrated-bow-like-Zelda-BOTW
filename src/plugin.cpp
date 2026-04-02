@@ -6,16 +6,15 @@
 #include <filesystem>
 #include <mutex>
 
-#include "BowState.h"
 #include "Config/Config.h"
 #include "Hooks.h"
 #include "Input/InputHandler.h"
 #include "PCH.h"
+#include "Patchs/HiddenItemsPatch.h"
+#include "Patchs/UnMapBlock.h"
+#include "Persistence/SaveBowDB.h"
 #include "UI/Strings.h"
 #include "UI/UI_IntegratedBow.h"
-#include "patchs/HiddenItemsPatch.h"
-#include "patchs/UnMapBlock.h"
-#include "persistence/SaveBowDB.h"
 
 #ifndef DLLEXPORT
     #include "REL/Relocation.h"

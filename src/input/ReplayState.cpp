@@ -1,6 +1,6 @@
 #include "ReplayState.h"
 
-#include "BowState.h"
+#include "Input/SyntheticInput.h"
 
 namespace BowInput {
 

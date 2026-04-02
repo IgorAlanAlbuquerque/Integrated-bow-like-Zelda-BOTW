@@ -3,14 +3,17 @@
 #include <chrono>
 #include <string_view>
 
-#include "BowState.h"
 #include "Config/Config.h"
 #include "Input/HotkeyRuntime.h"
 #include "Input/InputGate.h"
 #include "Input/InputTiming.h"
+#include "Input/SyntheticInput.h"
 #include "PCH.h"
-#include "patchs/HiddenItemsPatch.h"
-#include "patchs/SkipEquipController.h"
+#include "Patchs/HiddenItemsPatch.h"
+#include "Patchs/SkipEquipController.h"
+#include "State/ChosenBow.h"
+#include "State/LoadoutRestore.h"
+#include "State/SessionState.h"
 
 using namespace BowInput::Timing;
 
@@ -18,7 +21,7 @@ using namespace std::literals;
 
 namespace BowInput {
     namespace {
-        constexpr float kSmartClickThreshold = 0.18f;
+        constexpr float kSmartClickThreshold = 0.1f;
 
         inline std::uint64_t NowMs() noexcept {
             using clock = std::chrono::steady_clock;
@@ -311,8 +314,7 @@ namespace BowInput {
         sheathRequestedByPlayer.store(false, std::memory_order_relaxed);
 
         if (sheathReq && st.isUsingBow) {
-            BowState::SetBowEquipped(false);
-            BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st);
+            sheathRestoreAtMs = NowMs() + 800;
         }
     }
 

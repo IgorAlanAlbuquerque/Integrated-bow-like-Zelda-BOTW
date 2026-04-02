@@ -1,6 +1,7 @@
 #include "InputGate.h"
 
 #include "PCH.h"
+#include "SKSEMenuFramework.h"
 
 namespace BowInput {
     bool InputGate::IsAttackEvent(std::string_view ue) noexcept {
@@ -41,6 +42,7 @@ namespace BowInput {
         auto* ui = RE::UI::GetSingleton();
         if (!ui) return false;
         if (ui->GameIsPaused()) return true;
+        if (SKSEMenuFramework::IsAnyBlockingWindowOpened()) return true;
 
         static const RE::BSFixedString inventoryMenu{"InventoryMenu"};
         static const RE::BSFixedString magicMenu{"MagicMenu"};

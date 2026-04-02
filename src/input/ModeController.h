@@ -51,6 +51,7 @@ namespace BowInput {
         bool hotkeyDown = false;
 
         std::uint64_t fakeEnableBumperAtMs = 0;
+        std::uint64_t sheathRestoreAtMs    = 0;
 
         std::atomic_bool allowUnequip{true};
         std::atomic<std::uint64_t> allowUnequipReenableMs{0};
