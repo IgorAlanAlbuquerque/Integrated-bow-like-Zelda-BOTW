@@ -53,21 +53,13 @@ namespace IntegratedBow {
         }
         mode.store(newMode, std::memory_order_relaxed);
 
-        const int k1 = _getInt(ini, "Input", "KeyboardScanCode1", 0x2F);
-        const int k2 = _getInt(ini, "Input", "KeyboardScanCode2", -1);
-        const int k3 = _getInt(ini, "Input", "KeyboardScanCode3", -1);
+        const int c1 = _getInt(ini, "Input", "KeyboardScanCode1", 0x2F);
+        const int c2 = _getInt(ini, "Input", "KeyboardScanCode2", -1);
+        const int c3 = _getInt(ini, "Input", "KeyboardScanCode3", -1);
 
-        keyboardScanCode1.store(k1, std::memory_order_relaxed);
-        keyboardScanCode2.store(k2, std::memory_order_relaxed);
-        keyboardScanCode3.store(k3, std::memory_order_relaxed);
-
-        const int gp1 = _getInt(ini, "Input", "GamepadButton1", -1);
-        const int gp2 = _getInt(ini, "Input", "GamepadButton2", -1);
-        const int gp3 = _getInt(ini, "Input", "GamepadButton3", -1);
-
-        gamepadButton1.store(gp1, std::memory_order_relaxed);
-        gamepadButton2.store(gp2, std::memory_order_relaxed);
-        gamepadButton3.store(gp3, std::memory_order_relaxed);
+        ScanCode1.store(c1, std::memory_order_relaxed);
+        ScanCode2.store(c2, std::memory_order_relaxed);
+        ScanCode3.store(c3, std::memory_order_relaxed);
 
         {
             bool autoDraw = true;
@@ -108,7 +100,6 @@ namespace IntegratedBow {
         noLeftBlockPatch = _getBool(ini, "Patches", "NoLeftBlockPatch", false);
         hideEquippedFromJsonPatch = _getBool(ini, "Patches", "HideEquippedFromJsonPatch", false);
         BlockUnequip = _getBool(ini, "Patches", "BlockPatch", false);
-        noChosenTag = _getBool(ini, "Patches", "NoChosenTag", false);
         skipEquipBowAnimationPatch.store(_getBool(ini, "Patches", "SkipEquipBowAnimationPatch", false),
                                          std::memory_order_relaxed);
         skipEquipReturnToMeleePatch.store(_getBool(ini, "Patches", "SkipEquipReturnToMeleePatch", false),
@@ -142,25 +133,18 @@ namespace IntegratedBow {
         }
 
         ini.SetValue("Input", "Mode", modeStr);
-        const int k1 = keyboardScanCode1.load(std::memory_order_relaxed);
-        const int k2 = keyboardScanCode2.load(std::memory_order_relaxed);
-        const int k3 = keyboardScanCode3.load(std::memory_order_relaxed);
-        ini.SetLongValue("Input", "KeyboardScanCode1", static_cast<long>(k1));
-        ini.SetLongValue("Input", "KeyboardScanCode2", static_cast<long>(k2));
-        ini.SetLongValue("Input", "KeyboardScanCode3", static_cast<long>(k3));
-        const int gp1 = gamepadButton1.load(std::memory_order_relaxed);
-        const int gp2 = gamepadButton2.load(std::memory_order_relaxed);
-        const int gp3 = gamepadButton3.load(std::memory_order_relaxed);
-        ini.SetLongValue("Input", "GamepadButton1", static_cast<long>(gp1));
-        ini.SetLongValue("Input", "GamepadButton2", static_cast<long>(gp2));
-        ini.SetLongValue("Input", "GamepadButton3", static_cast<long>(gp3));
+        const int c1 = ScanCode1.load(std::memory_order_relaxed);
+        const int c2 = ScanCode2.load(std::memory_order_relaxed);
+        const int c3 = ScanCode3.load(std::memory_order_relaxed);
+        ini.SetLongValue("Input", "ScanCode1", static_cast<long>(c1));
+        ini.SetLongValue("Input", "ScanCode2", static_cast<long>(c2));
+        ini.SetLongValue("Input", "ScanCode3", static_cast<long>(c3));
         ini.SetBoolValue("Input", "AutoDrawEnabled", autoDrawEnabled.load(std::memory_order_relaxed));
         ini.SetDoubleValue("Input", "SheathedDelaySeconds",
                            static_cast<double>(sheathedDelaySeconds.load(std::memory_order_relaxed)));
         ini.SetBoolValue("Patches", "NoLeftBlockPatch", noLeftBlockPatch);
         ini.SetBoolValue("Patches", "HideEquippedFromJsonPatch", hideEquippedFromJsonPatch);
         ini.SetBoolValue("Patches", "BlockPatch", BlockUnequip);
-        ini.SetBoolValue("Patches", "NoChosenTag", noChosenTag);
         ini.SetBoolValue("Patches", "SkipEquipBowAnimationPatch",
                          skipEquipBowAnimationPatch.load(std::memory_order_relaxed));
         ini.SetBoolValue("Patches", "SkipEquipReturnToMeleePatch",

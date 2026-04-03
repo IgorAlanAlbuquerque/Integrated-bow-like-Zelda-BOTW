@@ -4,7 +4,7 @@
     {
       "label": "Bootstrap: submodules",
       "type": "shell",
-      "command": "git submodule add -b ng https://github.com/alandtse/CommonLibVR.git extern/CommonLibVR-ng; git submodule update --init --recursive",
+      "command": "if (!(Test-Path extern/CommonLibSSE)) { git submodule add -b dev https://github.com/powerof3/CommonLibSSE.git extern/CommonLibSSE }; git submodule update --init --recursive",
       "problemMatcher": [],
       "runOptions": { "runOn": "folderOpen" }
     }

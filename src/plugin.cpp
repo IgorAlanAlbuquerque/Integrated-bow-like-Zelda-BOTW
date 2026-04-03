@@ -7,6 +7,8 @@
 #include <mutex>
 
 #include "Config/Config.h"
+#include "DIII/SelectedBowCondition.h"
+#include "DIII_API.h"
 #include "Hooks.h"
 #include "Input/InputHandler.h"
 #include "PCH.h"
@@ -16,9 +18,6 @@
 #include "UI/Strings.h"
 #include "UI/UI_IntegratedBow.h"
 
-#ifndef DLLEXPORT
-    #include "REL/Relocation.h"
-#endif
 #ifndef DLLEXPORT
     #define DLLEXPORT __declspec(dllexport)
 #endif
@@ -35,6 +34,7 @@ namespace {
     void ApplyPrefsToConfig(const IntegratedBow::SaveBowPrefs& p) {
         auto& cfg = IntegratedBow::GetBowConfig();
         cfg.chosenBowFormID.store(p.bow, std::memory_order_relaxed);
+        cfg.chosenBowUniqueID.store(p.bowUniqueID, std::memory_order_relaxed);
         cfg.preferredArrowFormID.store(p.arrow, std::memory_order_relaxed);
     }
 
@@ -42,6 +42,7 @@ namespace {
         auto const& cfg = IntegratedBow::GetBowConfig();
         IntegratedBow::SaveBowPrefs p{};
         p.bow = cfg.chosenBowFormID.load(std::memory_order_relaxed);
+        p.bowUniqueID = cfg.chosenBowUniqueID.load(std::memory_order_relaxed);
         p.arrow = cfg.preferredArrowFormID.load(std::memory_order_relaxed);
         return p;
     }
@@ -183,7 +184,40 @@ namespace {
                 break;
         }
     }
+
+    void OnDIIIMessage(SKSE::MessagingInterface::Message* msg) {
+        if (!msg) {
+            return;
+        }
+
+        if (msg->type != DIII::kMessage_GetAPI) {
+            return;
+        }
+
+        auto* api = static_cast<DIII::IAPI*>(msg->data);
+        if (!api) {
+            return;
+        }
+
+        const bool ok = api->RegisterCondition(
+            "integratedBowSelected", [](const Json::Value& value, RE::FormType) -> std::unique_ptr<DIII::ICondition> {
+                return std::make_unique<IntegratedBow::SelectedBowCondition>(value);
+            });
+
+        spdlog::info("[DIII] RegisterCondition returned {}", ok);
+    }
 }
+
+extern "C" DLLEXPORT constinit auto SKSEPlugin_Version = []() {
+    SKSE::PluginVersionData v{};
+    v.PluginVersion(REL::Version{1, 5, 0, 0});
+    v.PluginName("INTEGRATEDBOW");
+    v.AuthorName("LoliManiaco");
+    v.UsesAddressLibrary();
+    v.UsesNoStructs();
+    v.CompatibleVersions({SKSE::RUNTIME_SSE_1_6_1170});
+    return v;
+}();
 
 extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* skse) {
     SKSE::Init(skse);
@@ -194,18 +228,12 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* sks
     IntegratedBow::Strings::Load();
 
     BowInput::SetMode(std::to_underlying(cfg.mode.load(std::memory_order_relaxed)));
-    BowInput::SetKeyScanCodes(cfg.keyboardScanCode1.load(std::memory_order_relaxed),
-                              cfg.keyboardScanCode2.load(std::memory_order_relaxed),
-                              cfg.keyboardScanCode3.load(std::memory_order_relaxed));
-
-    BowInput::SetGamepadButtons(cfg.gamepadButton1.load(std::memory_order_relaxed),
-                                cfg.gamepadButton2.load(std::memory_order_relaxed),
-                                cfg.gamepadButton3.load(std::memory_order_relaxed));
-
-    SKSE::AllocTrampoline(1 << 14);
+    BowInput::SetCombo(cfg.ScanCode1.load(std::memory_order_relaxed), cfg.ScanCode2.load(std::memory_order_relaxed),
+                       cfg.ScanCode3.load(std::memory_order_relaxed));
 
     if (const auto mi = SKSE::GetMessagingInterface()) {
         mi->RegisterListener(GlobalMessageHandler);
+        DIII::ListenForRegistration(OnDIIIMessage);
     }
 
     return true;

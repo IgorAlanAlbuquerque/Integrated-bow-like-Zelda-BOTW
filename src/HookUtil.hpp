@@ -17,22 +17,11 @@ namespace Hook::stl {
     }
 
     template <class T, std::size_t Size = 5>
-    void write_call(REL::VariantID a_varId, REL::VariantOffset a_Offs = VariantOffset(0x0, 0x0, 0x0)) {
+    void write_call(REL::ID a_id, std::ptrdiff_t a_offs = 0) {
         SKSE::AllocTrampoline(14);
         auto& trampoline = SKSE::GetTrampoline();
-        const auto address = a_varId.address() + a_Offs.offset();
-        if constexpr (Size == 6) {
-            T::func = *reinterpret_cast<uintptr_t*>(trampoline.write_call<6>(address, T::thunk));
-        } else {
-            T::func = trampoline.write_call<Size>(address, T::thunk);
-        }
-    }
+        const auto address = a_id.address() + a_offs;
 
-    template <class T, std::size_t Size = 5>
-    void write_call(REL::RelocationID a_RelId, REL::VariantOffset a_Offs = VariantOffset(0x0, 0x0, 0x0)) {
-        SKSE::AllocTrampoline(14);
-        auto& trampoline = SKSE::GetTrampoline();
-        const auto address = a_RelId.address() + a_Offs.offset();
         if constexpr (Size == 6) {
             T::func = *reinterpret_cast<uintptr_t*>(trampoline.write_call<6>(address, T::thunk));
         } else {
@@ -48,10 +37,10 @@ namespace Hook::stl {
     }
 
     template <class T>
-    void write_jmp(REL::VariantID a_Id, REL::VariantOffset a_Offs = VariantOffset(0x0, 0x0, 0x0)) {
+    void write_jmp(REL::ID a_id, std::ptrdiff_t a_offs = 0) {
         SKSE::AllocTrampoline(8);
         auto& trampoline = SKSE::GetTrampoline();
-        T::func = trampoline.write_branch<5>(a_Id.address() + a_Offs.offset(), T::thunk);
+        T::func = trampoline.write_branch<5>(a_id.address() + a_offs, T::thunk);
     }
 
     template <class F, size_t index, class T>
@@ -61,7 +50,7 @@ namespace Hook::stl {
     }
 
     template <std::size_t idx, class T>
-    void write_vfunc(REL::VariantID id) {
+    void write_vfunc(REL::ID id) {
         REL::Relocation<std::uintptr_t> vtbl{id};
         T::func = vtbl.write_vfunc(idx, T::thunk);
     }
@@ -72,7 +61,7 @@ namespace Hook::stl {
     }
 
     template <class T>
-    void write_detour(REL::RelocationID a_relId) {
+    void write_detour(REL::ID a_relId) {
         REL::Relocation<std::uintptr_t> target{a_relId};
 
         if (!target.address()) {
@@ -99,7 +88,7 @@ namespace Hook::stl {
     }
 
     template <class T>
-    void write_detour_replace(REL::RelocationID a_relId) {
+    void write_detour_replace(REL::ID a_relId) {
         REL::Relocation<std::uintptr_t> target{a_relId};
 
         if (!target.address()) {

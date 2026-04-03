@@ -21,7 +21,7 @@ using namespace std::literals;
 
 namespace BowInput {
     namespace {
-        constexpr float kSmartClickThreshold = 0.1f;
+        constexpr float kSmartClickThreshold = 0.15f;
 
         inline std::uint64_t NowMs() noexcept {
             using clock = std::chrono::steady_clock;
@@ -314,7 +314,7 @@ namespace BowInput {
         sheathRequestedByPlayer.store(false, std::memory_order_relaxed);
 
         if (sheathReq && st.isUsingBow) {
-            sheathRestoreAtMs = NowMs() + 800;
+            sheathRestoreAtMs = NowMs() + 2000;
         }
     }
 
@@ -583,8 +583,7 @@ namespace BowInput {
 
     bool BowModeController::IsWeaponDrawn(RE::Actor* actor) {
         if (!actor) return false;
-        auto const* state = actor->AsActorState();
-        return state && state->IsWeaponDrawn();
+        return actor && actor->IsWeaponDrawn();
     }
 
     void BowModeController::SetWeaponDrawn(RE::Actor* actor, bool drawn) {

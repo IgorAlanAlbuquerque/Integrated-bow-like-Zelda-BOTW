@@ -5,7 +5,9 @@
             "includePath": [
                 "${workspaceFolder}/src",
                 "${workspaceFolder}/build/release/vcpkg_installed/x64-windows-static-md/include",
-                "${workspaceFolder}/extern/CommonLibVR-ng/include"
+                "${workspaceFolder}/extern/CommonLibVR-ng/include",
+                "${workspaceFolder}/extern/CommonLibVR-ng/extern/openvr/src",
+                "${workspaceFolder}/build/release/vcpkg_installed/vcpkg/pkgs/directxtk_x64-windows-static-md/include/directxtk"
             ],
             "defines": [
                 "_DEBUG",

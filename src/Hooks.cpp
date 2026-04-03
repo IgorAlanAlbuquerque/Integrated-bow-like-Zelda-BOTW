@@ -9,8 +9,8 @@
 #include "Input/ModeController.h"
 #include "Input/SyntheticInput.h"
 #include "PCH.h"
-#include "State/ChosenBow.h"     // SetChosenBow, SetPreferredArrow
-#include "State/SessionState.h"  // IsUsingBow, IsEquipingBow, SetUsingBow
+#include "State/ChosenBow.h"
+#include "State/SessionState.h"
 
 namespace {
     inline bool IsBowOrCrossbow(const RE::TESObjectWEAP* weap) {
@@ -68,7 +68,7 @@ namespace {
                  a_applyNow);
         }
 
-        static void Install() { Hook::stl::write_detour<EquipObjectHook>(REL::RelocationID(37938, 38894)); }
+        static void Install() { Hook::stl::write_detour<EquipObjectHook>(RELOCATION_ID(37938, 38894)); }
     };
 
     inline std::string FormIDStr(const RE::TESForm* f) {
@@ -109,7 +109,7 @@ namespace {
                  a_applyNow, a_slotToReplace);
         }
 
-        static void Install() { Hook::stl::write_detour<UnequipObjectHook>(REL::RelocationID(37945, 38901)); }
+        static void Install() { Hook::stl::write_detour<UnequipObjectHook>(RELOCATION_ID(37945, 38901)); }
     };
 
     struct PollInputDevicesHook {
@@ -157,10 +157,7 @@ namespace {
             if (func != 0) reinterpret_cast<Fn*>(func)(a_dispatcher, arr);
         }
 
-        static void Install() {
-            Hook::stl::write_call<PollInputDevicesHook>(REL::RelocationID(67315, 68617),
-                                                        REL::VariantOffset(0x7B, 0x7B, 0x81));
-        }
+        static void Install() { Hook::stl::write_call<PollInputDevicesHook>(RELOCATION_ID(67315, 68617), 0x7B); }
     };
 
     struct PlayerAnimGraphProcessEventHook {

@@ -63,9 +63,9 @@ namespace {
     }
 
     void DrawKeyboardHotkeysSection(IntegratedBow::BowConfig& cfg, bool& dirty) {
-        int key1 = cfg.keyboardScanCode1.load(std::memory_order_relaxed);
-        int key2 = cfg.keyboardScanCode2.load(std::memory_order_relaxed);
-        int key3 = cfg.keyboardScanCode3.load(std::memory_order_relaxed);
+        int key1 = cfg.ScanCode1.load(std::memory_order_relaxed);
+        int key2 = cfg.ScanCode2.load(std::memory_order_relaxed);
+        int key3 = cfg.ScanCode3.load(std::memory_order_relaxed);
 
         const auto& groupLabelK = IntegratedBow::Strings::Get("Item_KeyboardKey", "Keyboard keys (scan codes)");
         const auto& tipTextK = IntegratedBow::Strings::Get("Item_KeyboardComboTip",
@@ -77,98 +77,26 @@ namespace {
         ImGui::SetNextItemWidth(150.0f);
         if (ImGui::InputInt(IntegratedBow::Strings::Get("Item_KeyboardKey1", "Key 1").c_str(), &key1)) {
             if (key1 < -1) key1 = -1;
-            cfg.keyboardScanCode1.store(key1, std::memory_order_relaxed);
+            cfg.ScanCode1.store(key1, std::memory_order_relaxed);
             dirty = true;
         }
 
         ImGui::SetNextItemWidth(150.0f);
         if (ImGui::InputInt(IntegratedBow::Strings::Get("Item_KeyboardKey2", "Key 2").c_str(), &key2)) {
             if (key2 < -1) key2 = -1;
-            cfg.keyboardScanCode2.store(key2, std::memory_order_relaxed);
+            cfg.ScanCode2.store(key2, std::memory_order_relaxed);
             dirty = true;
         }
 
         ImGui::SetNextItemWidth(150.0f);
         if (ImGui::InputInt(IntegratedBow::Strings::Get("Item_KeyboardKey3", "Key 3").c_str(), &key3)) {
             if (key3 < -1) key3 = -1;
-            cfg.keyboardScanCode3.store(key3, std::memory_order_relaxed);
+            cfg.ScanCode3.store(key3, std::memory_order_relaxed);
             dirty = true;
         }
 
         ImGui::PopID();
         ImGui::TextDisabled("%s", tipTextK.c_str());
-    }
-
-    void DrawGamepadHotkeysSection(IntegratedBow::BowConfig& cfg, bool& dirty) {
-        int gp1 = cfg.gamepadButton1.load(std::memory_order_relaxed);
-        int gp2 = cfg.gamepadButton2.load(std::memory_order_relaxed);
-        int gp3 = cfg.gamepadButton3.load(std::memory_order_relaxed);
-
-        const auto& groupLabelP = IntegratedBow::Strings::Get("Item_GamepadButton", "Gamepad buttons");
-        const auto& tipTextP = IntegratedBow::Strings::Get(
-            "Item_GamepadComboTip", "All non -1 buttons must be held together at the same time.");
-
-        ImGui::TextUnformatted(groupLabelP.c_str());
-        ImGui::PushID("GamepadHotkeys");
-
-        ImGui::SetNextItemWidth(150.0f);
-        if (ImGui::InputInt(IntegratedBow::Strings::Get("Item_GamepadButton1", "Btn 1").c_str(), &gp1)) {
-            if (gp1 < -1) gp1 = -1;
-            cfg.gamepadButton1.store(gp1, std::memory_order_relaxed);
-            dirty = true;
-        }
-
-        ImGui::SetNextItemWidth(150.0f);
-        if (ImGui::InputInt(IntegratedBow::Strings::Get("Item_GamepadButton2", "Btn 2").c_str(), &gp2)) {
-            if (gp2 < -1) gp2 = -1;
-            cfg.gamepadButton2.store(gp2, std::memory_order_relaxed);
-            dirty = true;
-        }
-
-        ImGui::SetNextItemWidth(150.0f);
-        if (ImGui::InputInt(IntegratedBow::Strings::Get("Item_GamepadButton3", "Btn 3").c_str(), &gp3)) {
-            if (gp3 < -1) gp3 = -1;
-            cfg.gamepadButton3.store(gp3, std::memory_order_relaxed);
-            dirty = true;
-        }
-
-        ImGui::Spacing();
-        if (!g_capturingHotkey) {
-            if (ImGui::Button(
-                    IntegratedBow::Strings::Get("Item_CaptureHotkey", "Capture next key/button after press esc")
-                        .c_str())) {
-                BowInput::RequestGamepadCapture();
-                g_capturingHotkey = true;
-            }
-        } else {
-            ImGui::TextDisabled("%s", IntegratedBow::Strings::Get(
-                                          "Item_CaptureHotkey_Waiting",
-                                          "Press ESC to close the menu then press a keyboard key or gamepad button...")
-                                          .c_str());
-
-            int encoded = BowInput::PollCapturedGamepadButton();
-            if (encoded != -1) {
-                if (encoded >= 0) {
-                    int code = encoded;
-                    cfg.keyboardScanCode1.store(code, std::memory_order_relaxed);
-                    cfg.keyboardScanCode2.store(-1, std::memory_order_relaxed);
-                    cfg.keyboardScanCode3.store(-1, std::memory_order_relaxed);
-                    BowInput::SetKeyScanCodes(code, -1, -1);
-                } else {
-                    int code = -(encoded + 1);
-                    cfg.gamepadButton1.store(code, std::memory_order_relaxed);
-                    cfg.gamepadButton2.store(-1, std::memory_order_relaxed);
-                    cfg.gamepadButton3.store(-1, std::memory_order_relaxed);
-                    BowInput::SetGamepadButtons(code, -1, -1);
-                }
-
-                dirty = true;
-                g_capturingHotkey = false;
-            }
-        }
-
-        ImGui::PopID();
-        ImGui::TextDisabled("%s", tipTextP.c_str());
     }
 
     void DrawPendingAndApplySection(IntegratedBow::BowConfig& cfg) {
@@ -191,13 +119,8 @@ namespace {
 
         BowInput::SetMode(std::to_underlying(cfg.mode.load(std::memory_order_relaxed)));
 
-        BowInput::SetKeyScanCodes(cfg.keyboardScanCode1.load(std::memory_order_relaxed),
-                                  cfg.keyboardScanCode2.load(std::memory_order_relaxed),
-                                  cfg.keyboardScanCode3.load(std::memory_order_relaxed));
-
-        BowInput::SetGamepadButtons(cfg.gamepadButton1.load(std::memory_order_relaxed),
-                                    cfg.gamepadButton2.load(std::memory_order_relaxed),
-                                    cfg.gamepadButton3.load(std::memory_order_relaxed));
+        BowInput::SetCombo(cfg.ScanCode1.load(std::memory_order_relaxed), cfg.ScanCode2.load(std::memory_order_relaxed),
+                           cfg.ScanCode3.load(std::memory_order_relaxed));
 
         UnMapBlock::SetNoLeftBlockPatch(cfg.noLeftBlockPatch);
         HiddenItemsPatch::SetEnabled(cfg.hideEquippedFromJsonPatch);
@@ -249,7 +172,6 @@ namespace {
         bool noLeftBlock = cfg.noLeftBlockPatch;
         bool hideFromJson = cfg.hideEquippedFromJsonPatch;
         bool blockUnequip = cfg.BlockUnequip;
-        bool noChosenTag = cfg.noChosenTag;
         bool skipEquipBowAnim = cfg.skipEquipBowAnimationPatch.load(std::memory_order_relaxed);
         bool skipReturn = cfg.skipEquipReturnToMeleePatch.load(std::memory_order_relaxed);
         bool cancelExitDelayOnAttack = cfg.cancelHoldExitDelayOnAttackPatch.load(std::memory_order_relaxed);
@@ -302,23 +224,6 @@ namespace {
 
         ImGui::SameLine();
         ImGui::TextDisabled("%s", tipBlockUnequip.c_str());
-
-        ImGui::Separator();
-
-        const auto& lblNoChosenTag =
-            IntegratedBow::Strings::Get("Item_NoChosenTagPatch", "Disable chosen-bow inventory tag");
-        const auto& tipNoChosenTag = IntegratedBow::Strings::Get(
-            "Item_NoChosenTagPatch_Tip",
-            "When enabled, the plugin will NOT apply the chosen-bow tag to the selected bow instance. "
-            "Use this if you don't want the marker/rename or if another mod expects the original instance metadata.");
-
-        if (ImGui::Checkbox(lblNoChosenTag.c_str(), &noChosenTag)) {
-            cfg.noChosenTag = noChosenTag;
-            dirty = true;
-        }
-
-        ImGui::SameLine();
-        ImGui::TextDisabled("%s", tipNoChosenTag.c_str());
 
         ImGui::Separator();
 
@@ -397,7 +302,6 @@ void __stdcall IntegratedBow_UI::DrawInputTab() {
 
     DrawModeSection(cfg, dirty);
     DrawKeyboardHotkeysSection(cfg, dirty);
-    DrawGamepadHotkeysSection(cfg, dirty);
     DrawFinalTip();
 
     if (dirty) {

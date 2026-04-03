@@ -28,10 +28,6 @@ namespace {
         });
     }
 
-    inline int ActiveKeysInCombo(const std::array<int, kMaxComboKeys>& combo) {
-        return static_cast<int>(std::ranges::count_if(combo, [](int v) { return v != -1; }));
-    }
-
     inline bool PendingActive(const HotkeyRuntime& rt) { return rt.exclusivePendingSrc != 0; }
 
     bool ShouldFilterBow(int unifiedCode, std::uint32_t rawIdCode, const RE::BSFixedString& userEvent, float value,
@@ -41,10 +37,7 @@ namespace {
         const bool hotkeyDown = BowModeController::Get().hotkeyDown;
         const auto& inputs = Inputs();
 
-        const bool inKb = ComboContains(hk.bowKeyScanCodes, unifiedCode);
-        const bool inGp = ComboContains(hk.bowPadButtons, unifiedCode);
-
-        if (!inKb && !inGp) return false;
+        if (!ComboContains(hk.bowCombo, unifiedCode)) return false;
 
         auto& rp = GetBowReplayState();
         if (rp.armed && rp.rawIdCode == rawIdCode && rp.userEvent == userEvent && (value > 0.5f) == rp.valueAboveHalf) {
@@ -53,12 +46,9 @@ namespace {
         }
 
         if (hotkeyDown) return true;
-
         if (rt.suppressUntilReleased) return true;
 
-        const bool fullKbDown = inKb && ComboIsFullyDown(hk.bowKeyScanCodes, inputs);
-        const bool fullGpDown = inGp && ComboIsFullyDown(hk.bowPadButtons, inputs);
-        if (fullKbDown || fullGpDown) {
+        if (ComboIsFullyDown(hk.bowCombo, inputs)) {
             if (PendingActive(rt)) GetBowDeferredQueue().retained.push_back({rawIdCode, userEvent, value, heldSecs});
             return true;
         }
@@ -70,7 +60,6 @@ namespace {
 
         return false;
     }
-
 }
 
 void BowInput::UpdateBowInputState(RE::InputEvent** a_evns) {
@@ -79,7 +68,6 @@ void BowInput::UpdateBowInputState(RE::InputEvent** a_evns) {
     for (auto* e = *a_evns; e; e = e->next) {
         const auto* btn = e->AsButtonEvent();
         if (!btn) continue;
-
         inputs.OnButton(btn->GetDevice(), static_cast<int>(btn->idCode), btn->IsPressed());
     }
 }
@@ -117,9 +105,8 @@ void BowInput::FilterBowEvents(RE::InputEvent** a_evns) {
                 unified = kMouseOffset + idx;
             }
 
-            if (unified >= 0 && unified < kMaxCode) {
+            if (unified >= 0 && unified < kMaxCode)
                 remove = ShouldFilterBow(unified, rawCode, btn->QUserEvent(), btn->Value(), btn->HeldDuration());
-            }
         }
 
         if (remove) {

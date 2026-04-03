@@ -12,15 +12,10 @@ namespace BowInput {
         constexpr int kDIK_S = 0x1F;
         constexpr int kDIK_D = 0x20;
 
-        enum class PendingSrc : std::uint8_t { None = 0, Kb = 1, Gp = 2 };
-
         struct Snapshot {
-            bool kbNow{};
-            bool gpNow{};
-            bool rawNow{};
+            bool comboNow{};
             bool prevAccepted{};
-            bool kbPressedEdge{};
-            bool gpPressedEdge{};
+            bool pressedEdge{};
         };
 
         inline bool AnyEnabled(const std::array<int, kMaxComboKeys>& a) {
@@ -68,22 +63,15 @@ namespace BowInput {
 
         inline Snapshot MakeSnapshot(bool prevHotkeyDown, const HotkeyRuntime& rt, const HotkeyConfig& hk,
                                      const InputState& inputs) {
-            const bool kbNow = ComboDown(hk.bowKeyScanCodes, inputs);
-            const bool gpNow = ComboDown(hk.bowPadButtons, inputs);
+            const bool comboNow = ComboDown(hk.bowCombo, inputs);
             return Snapshot{
-                .kbNow = kbNow,
-                .gpNow = gpNow,
-                .rawNow = kbNow || gpNow,
+                .comboNow = comboNow,
                 .prevAccepted = prevHotkeyDown,
-                .kbPressedEdge = kbNow && !rt.prevRawKbComboDown,
-                .gpPressedEdge = gpNow && !rt.prevRawGpComboDown,
+                .pressedEdge = comboNow && !rt.prevRawComboDown,
             };
         }
 
-        inline void CommitEdges(HotkeyRuntime& rt, const Snapshot& s) noexcept {
-            rt.prevRawKbComboDown = s.kbNow;
-            rt.prevRawGpComboDown = s.gpNow;
-        }
+        inline void CommitEdges(HotkeyRuntime& rt, const Snapshot& s) noexcept { rt.prevRawComboDown = s.comboNow; }
 
         inline void ClearPending(HotkeyRuntime& rt) noexcept {
             rt.exclusivePendingSrc = 0;
@@ -94,24 +82,14 @@ namespace BowInput {
             if (!rt.suppressUntilReleased) return false;
             ClearPending(rt);
             inOut_hotkeyDown = false;
-            if (!s.rawNow) rt.suppressUntilReleased = false;
+            if (!s.comboNow) rt.suppressUntilReleased = false;
             return true;
-        }
-
-        inline bool StillExclusive(PendingSrc pending, bool rawNow, const HotkeyConfig& hk, const InputState& inputs) {
-            const auto& combo = (pending == PendingSrc::Kb) ? hk.bowKeyScanCodes : hk.bowPadButtons;
-            return rawNow ? ComboExclusiveNow(combo, inputs) : ComboExclusiveReleaseOk(combo, inputs);
         }
 
         inline void ArmPendingIfEdge(const Snapshot& s, HotkeyRuntime& rt, const HotkeyConfig& hk,
                                      const InputState& inputs) {
-            if (s.kbPressedEdge && ComboExclusiveNow(hk.bowKeyScanCodes, inputs)) {
-                rt.exclusivePendingSrc = std::to_underlying(PendingSrc::Kb);
-                rt.exclusivePendingTimer = BowInput::Timing::kExclusiveConfirmDelaySec;
-                return;
-            }
-            if (s.gpPressedEdge && ComboExclusiveNow(hk.bowPadButtons, inputs)) {
-                rt.exclusivePendingSrc = std::to_underlying(PendingSrc::Gp);
+            if (s.pressedEdge && ComboExclusiveNow(hk.bowCombo, inputs)) {
+                rt.exclusivePendingSrc = 1;  // único source agora
                 rt.exclusivePendingTimer = BowInput::Timing::kExclusiveConfirmDelaySec;
             }
         }
@@ -120,26 +98,28 @@ namespace BowInput {
                                     const InputState& inputs, bool requireExclusive, float dt) {
             if (!requireExclusive) {
                 ClearPending(rt);
-                return s.rawNow;
+                return s.comboNow;
             }
 
-            if (s.prevAccepted) return s.rawNow;
+            if (s.prevAccepted) return s.comboNow;
 
-            const auto pending = static_cast<PendingSrc>(rt.exclusivePendingSrc);
-
-            if (pending == PendingSrc::None) {
+            if (rt.exclusivePendingSrc == 0) {
                 ArmPendingIfEdge(s, rt, hk, inputs);
                 return false;
             }
 
-            if (!StillExclusive(pending, s.rawNow, hk, inputs)) {
+            // Pending ativo — verificar se ainda exclusivo
+            const bool stillExcl =
+                s.comboNow ? ComboExclusiveNow(hk.bowCombo, inputs) : ComboExclusiveReleaseOk(hk.bowCombo, inputs);
+
+            if (!stillExcl) {
                 ClearPending(rt);
                 return false;
             }
 
-            if (!s.rawNow) {
+            if (!s.comboNow) {
                 ClearPending(rt);
-                return true;
+                return true;  // tap rápido — válido
             }
 
             rt.exclusivePendingTimer -= dt;

@@ -3,10 +3,10 @@
 #include <ranges>
 
 #include "Config/Config.h"
-#include "Input/InputHandler.h"  // ForceAllowUnequip
+#include "Input/InputHandler.h"
 #include "PCH.h"
 #include "Patchs/SkipEquipController.h"
-#include "State/ChosenBow.h"  // FindAnyInstanceExtraForBase, ResolveLiveExtra
+#include "State/ChosenBow.h"
 #include "State/SessionState.h"
 
 namespace BowState {
@@ -34,9 +34,7 @@ namespace BowState {
             return desired ? curBase == desired : curBase == nullptr;
         }
 
-    }  // namespace
-
-    // ── snapshot ───────────────────────────────────────────────────────────
+    }
 
     void CaptureWornArmorSnapshot(std::vector<ExtraEquippedItem>& out) {
         out.clear();
@@ -69,8 +67,6 @@ namespace BowState {
         return removed;
     }
 
-    // ── extras ─────────────────────────────────────────────────────────────
-
     void ReequipPrevExtraEquipped(RE::Actor* actor, RE::ActorEquipManager* equipMgr) {
         if (!actor || !equipMgr) return;
         auto& st = Get();
@@ -91,8 +87,6 @@ namespace BowState {
         return std::ranges::any_of(Get().prevExtraEquipped,
                                    [&](auto const& e) { return e.base == item.base && e.extra == item.extra; });
     }
-
-    // ── hidden items patch ─────────────────────────────────────────────────
 
     void ApplyHiddenItemsPatch(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
                                const std::vector<RE::FormID>& hiddenFormIDs) {
@@ -118,8 +112,6 @@ namespace BowState {
         }
     }
 
-    // ── restore ────────────────────────────────────────────────────────────
-
     void RestorePrevWeaponsAndAmmo(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
                                    IntegratedBowState& st) {
         if (!player || !equipMgr) return;
@@ -139,7 +131,6 @@ namespace BowState {
 
         BowInput::ForceAllowUnequip();
 
-        // ── mão direita ───────────────────────────────────────────────────
         auto* rightBase = st.prevRight.base;
         auto* rightExtra = st.prevRight.extra;
 
@@ -159,7 +150,6 @@ namespace BowState {
             equipMgr->EquipObject(player, rightBase, rightExtra, 1, nullptr, rightExtra == nullptr, false, true, false);
         }
 
-        // ── mão esquerda ──────────────────────────────────────────────────
         auto* leftBase = st.prevLeft.base;
         auto* leftExtra = st.prevLeft.extra;
 
@@ -179,12 +169,10 @@ namespace BowState {
             equipMgr->EquipObject(player, leftBase, leftExtra, 1, nullptr, leftExtra == nullptr, false, true, false);
         }
 
-        // ── desequipar arco se sem armas prévias ──────────────────────────
         if (!rightBase && !leftBase && st.chosenBow.base)
             equipMgr->UnequipObject(player, st.chosenBow.base, st.chosenBow.extra, 1, nullptr, true, true, true, false,
                                     nullptr);
 
-        // ── flecha ────────────────────────────────────────────────────────
         if (auto* prevAmmo = st.prevAmmo) {
             equipMgr->EquipObject(player, prevAmmo, nullptr, 1, nullptr, true, false, true, false);
         } else if (auto* preferred = GetPreferredArrow()) {
@@ -206,8 +194,6 @@ namespace BowState {
         st.pendingDesiredLeft = st.prevLeft.base;
         ClearPrevWeapons();
     }
-
-    // ── deferred finalize ──────────────────────────────────────────────────
 
     void UpdateDeferredFinalize(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr, float dt) {
         auto& st = Get();

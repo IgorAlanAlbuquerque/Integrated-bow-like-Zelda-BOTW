@@ -5,20 +5,15 @@
 
 namespace BowState {
 
-    // ── arco escolhido ─────────────────────────────────────────────────────
-
-    void LoadChosenBow(RE::TESObjectWEAP* bow);
+    void LoadChosenBow(RE::TESObjectWEAP* bow, std::uint16_t uniqueID = 0);
     void ClearChosenBow();
     bool EnsureChosenBowInInventory();
     void SetChosenBow(RE::TESObjectWEAP* bow, RE::ExtraDataList* extra);
 
-    // ── flecha preferida ───────────────────────────────────────────────────
-
     RE::TESAmmo* GetPreferredArrow();
-    void SetPreferredArrow(RE::TESAmmo* ammo);
+    void SetPreferredArrow(RE::TESAmmo const* ammo);
 
-    // ── utilitário de inventário (usado também em LoadoutRestore) ──────────
-
-    [[nodiscard]] RE::ExtraDataList* FindAnyInstanceExtraForBase(RE::TESBoundObject* base);
-    [[nodiscard]] RE::ExtraDataList* ResolveLiveExtra(RE::TESBoundObject* base, RE::ExtraDataList* candidate);
+    [[nodiscard]] RE::ExtraDataList* FindAnyInstanceExtraForBase(RE::TESBoundObject const* base);
+    [[nodiscard]] RE::ExtraDataList* ResolveLiveExtra(RE::TESBoundObject const* base,
+                                                      RE::ExtraDataList const* candidate);
 }

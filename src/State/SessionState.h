@@ -43,8 +43,6 @@ namespace BowState {
 
     IntegratedBowState& Get();
 
-    // ── accessors ──────────────────────────────────────────────────────────
-
     inline bool IsAutoAttackHeld() { return Get().isAutoAttackHeld; }
     inline void SetAutoAttackHeld(bool v) { Get().isAutoAttackHeld = v; }
     inline bool IsEquipingBow() { return Get().isEquipingBow; }

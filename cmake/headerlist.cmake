@@ -21,4 +21,5 @@ set(headers
     src/State/SessionState.h
     src/State/ChosenBow.h
     src/State/LoadoutRestore.h
+    src/DIII/SelectedBowCondition.h
 )

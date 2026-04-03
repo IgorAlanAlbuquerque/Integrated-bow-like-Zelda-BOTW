@@ -9,8 +9,7 @@ namespace BowInput {
     void ProcessBowLogic(float dt);
 
     void SetMode(int mode);
-    void SetKeyScanCodes(int k1, int k2, int k3);
-    void SetGamepadButtons(int b1, int b2, int b3);
+    void SetCombo(int k1, int k2, int k3);
 
     void RequestGamepadCapture();
     [[nodiscard]] int PollCapturedGamepadButton();

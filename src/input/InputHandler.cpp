@@ -15,7 +15,7 @@
 #include "PCH.h"
 #include "Patchs/SkipEquipController.h"
 #include "State/LoadoutRestore.h"
-#include "State/SessionState.h"  // IsWaitingAutoAfterEquip, IsUsingBow
+#include "State/SessionState.h"
 
 using namespace BowInput::Timing;
 
@@ -65,7 +65,7 @@ namespace BowInput {
         };
 
         CaptureState g_capture;
-        HotkeyConfig g_hotkeyConfig{.bowKeyScanCodes = {0x2F, -1, -1}, .bowPadButtons = {-1, -1, -1}};
+        HotkeyConfig g_hotkeyConfig{.bowCombo = {0x2F, -1, -1}};
         HotkeyRuntime g_hotkeyRuntime;
     }
 
@@ -103,8 +103,7 @@ namespace BowInput {
 
         if (ctrl.UpdateExitPending(dt)) {
             g_hotkeyRuntime.suppressUntilReleased = true;
-            g_hotkeyRuntime.prevRawKbComboDown = false;
-            g_hotkeyRuntime.prevRawGpComboDown = false;
+            g_hotkeyRuntime.prevRawComboDown = false;
             g_hotkeyRuntime.exclusivePendingSrc = 0;
             g_hotkeyRuntime.exclusivePendingTimer = 0.0f;
         }
@@ -157,21 +156,11 @@ namespace BowInput {
         }
     }
 
-    void SetKeyScanCodes(int k1, int k2, int k3) {
-        g_hotkeyConfig.bowKeyScanCodes = {k1, k2, k3};
+    void SetCombo(int k1, int k2, int k3) {
+        g_hotkeyConfig.bowCombo = {k1, k2, k3};
         auto& ctrl = BowModeController::Get();
         ctrl.hotkeyDown = false;
-        g_hotkeyRuntime.prevRawKbComboDown = false;
-        g_hotkeyRuntime.exclusivePendingSrc = 0;
-        g_hotkeyRuntime.exclusivePendingTimer = 0.0f;
-    }
-
-    void SetGamepadButtons(int b1, int b2, int b3) {
-        auto toUnified = [](int v) { return v == -1 ? -1 : kGamepadOffset + v; };
-        g_hotkeyConfig.bowPadButtons = {toUnified(b1), toUnified(b2), toUnified(b3)};
-        auto& ctrl = BowModeController::Get();
-        ctrl.hotkeyDown = false;
-        g_hotkeyRuntime.prevRawGpComboDown = false;
+        g_hotkeyRuntime.prevRawComboDown = false;
         g_hotkeyRuntime.exclusivePendingSrc = 0;
         g_hotkeyRuntime.exclusivePendingTimer = 0.0f;
     }

@@ -25,16 +25,41 @@ namespace BowState::detail {
             return ev;
         }
 
-    }  // namespace
+    }
 
     RE::ButtonEvent* MakeAttackButtonEvent(float value, float heldSecs) {
-        return RE::ButtonEvent::Create(RE::INPUT_DEVICE::kMouse, GetAttackUserEvent(), kAttackMouseIdCode, value,
-                                       heldSecs);
+        auto* ev = static_cast<RE::ButtonEvent*>(RE::malloc(sizeof(RE::ButtonEvent)));
+        if (!ev) {
+            return nullptr;
+        }
+
+        std::memset(ev, 0, sizeof(RE::ButtonEvent));
+
+        REL::Relocation<std::uintptr_t> vtbl{RE::VTABLE_ButtonEvent[0]};
+        *reinterpret_cast<std::uintptr_t*>(ev) = vtbl.address();
+
+        ev->next = nullptr;
+        ev->Init(RE::INPUT_DEVICE::kMouse, kAttackMouseIdCode, value, heldSecs, GetAttackUserEvent());
+
+        return ev;
     }
 
     RE::ButtonEvent* MakeGenericButtonEvent(RE::INPUT_DEVICE dev, const RE::BSFixedString& userEvent,
                                             std::uint32_t idCode, float value, float heldSecs) {
-        return RE::ButtonEvent::Create(dev, userEvent, idCode, value, heldSecs);
+        auto* ev = static_cast<RE::ButtonEvent*>(RE::malloc(sizeof(RE::ButtonEvent)));
+        if (!ev) {
+            return nullptr;
+        }
+
+        std::memset(ev, 0, sizeof(RE::ButtonEvent));
+
+        REL::Relocation<std::uintptr_t> vtbl{RE::VTABLE_ButtonEvent[0]};
+        *reinterpret_cast<std::uintptr_t*>(ev) = vtbl.address();
+
+        ev->next = nullptr;
+        ev->Init(dev, idCode, value, heldSecs, userEvent);
+
+        return ev;
     }
 
     void EnqueueSyntheticAttack(RE::ButtonEvent* ev) {

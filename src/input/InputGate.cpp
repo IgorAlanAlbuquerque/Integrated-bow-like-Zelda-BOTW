@@ -12,8 +12,7 @@ namespace BowInput {
     bool IsPlayerStateBlockingInput(RE::PlayerCharacter* player) noexcept {
         if (!player) return false;
 
-        auto const* st = player->AsActorState();
-        if (!st) return false;
+        auto const* st = static_cast<RE::ActorState const*>(player);
 
         if (st->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) {
             return true;

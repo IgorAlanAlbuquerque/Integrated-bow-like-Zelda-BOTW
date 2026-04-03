@@ -1,5 +1,5 @@
 #pragma once
-#pragma warning(disable : 4099 5054)
+#pragma warning(disable : 4099 5054 4996)
 
 #include <windows.h>
 

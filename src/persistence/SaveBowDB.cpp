@@ -59,6 +59,12 @@ namespace IntegratedBow {
                     prefs.bow = static_cast<std::uint32_t>(it2->get<std::int64_t>());
                 }
 
+                if (auto it = val.find("bowUniqueID"); it != val.end() && it->is_number_unsigned()) {
+                    prefs.bowUniqueID = static_cast<std::uint16_t>(it->get<std::uint32_t>());
+                } else if (auto it2 = val.find("bowUniqueID"); it2 != val.end() && it2->is_number_integer()) {
+                    prefs.bowUniqueID = static_cast<std::uint16_t>(it2->get<std::int64_t>());
+                }
+
                 if (auto it = val.find("arrow"); it != val.end() && it->is_number_unsigned()) {
                     prefs.arrow = it->get<std::uint32_t>();
                 } else if (auto it2 = val.find("arrow"); it2 != val.end() && it2->is_number_integer()) {
@@ -106,11 +112,12 @@ namespace IntegratedBow {
             for (auto const& [k, v] : _bySave) {
                 saves[k] = nlohmann::json{
                     {"bow", v.bow},
+                    {"bowUniqueID", v.bowUniqueID},
                     {"arrow", v.arrow},
                 };
             }
 
-            j["version"] = 2;
+            j["version"] = 3;
             j["saves"] = std::move(saves);
         }
 

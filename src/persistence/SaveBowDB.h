@@ -18,6 +18,7 @@ namespace IntegratedBow {
 
     struct SaveBowPrefs {
         std::uint32_t bow{0};
+        std::uint16_t bowUniqueID{0};
         std::uint32_t arrow{0};
     };
 
