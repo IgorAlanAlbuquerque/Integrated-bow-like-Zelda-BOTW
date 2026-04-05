@@ -112,40 +112,57 @@ namespace BowInput {
     }
 
     void BowModeController::OnHotkeyAcceptedPressed(RE::PlayerCharacter* player, bool blocked) {
-        if (mode_.smartMode) {
-            hotkeyDown = true;
+        hotkeyDown = true;
+
+        if (!mode_.smartMode) {
             if (!blocked) {
-                mode_.smartPending = true;
-                mode_.smartTimer = 0.0f;
-            } else {
-                mode_.smartPending = false;
-                mode_.smartTimer = 0.0f;
+                OnKeyPressed(player);
             }
-        } else {
-            hotkeyDown = true;
-            if (!blocked) OnKeyPressed(player);
+            return;
+        }
+
+        ResetSmartState();
+
+        if (blocked) {
+            return;
+        }
+
+        mode_.smartPending = true;
+        auto const& st = BowState::Get();
+        if (!st.isUsingBow) {
+            mode_.holdMode = false;
+            OnKeyPressed(player);
+            mode_.smartImmediatePressStarted = true;
         }
     }
 
     void BowModeController::OnHotkeyAcceptedReleased(RE::PlayerCharacter* player, bool blocked) {
-        if (mode_.smartMode) {
-            hotkeyDown = false;
+        hotkeyDown = false;
+
+        if (!mode_.smartMode) {
             if (!blocked) {
-                if (mode_.smartPending) {
-                    mode_.smartPending = false;
-                    mode_.smartTimer = 0.0f;
-                    mode_.holdMode = false;
-                    OnKeyPressed(player);
-                }
                 OnKeyReleased();
-            } else {
-                mode_.smartPending = false;
-                mode_.smartTimer = 0.0f;
             }
-        } else {
-            hotkeyDown = false;
-            if (!blocked) OnKeyReleased();
+            return;
         }
+
+        if (blocked) {
+            ResetSmartState();
+            return;
+        }
+
+        if (mode_.smartPending) {
+            mode_.smartPending = false;
+            mode_.smartTimer = 0.0f;
+            mode_.holdMode = false;
+
+            if (!mode_.smartImmediatePressStarted) {
+                OnKeyPressed(player);
+            }
+        }
+
+        OnKeyReleased();
+        ResetSmartState();
     }
 
     void BowModeController::UpdateSmartMode(RE::PlayerCharacter* player, float dt) {
@@ -153,15 +170,20 @@ namespace BowInput {
 
         mode_.smartTimer += dt;
 
-        if (mode_.smartTimer >= kSmartClickThreshold) {
-            mode_.smartPending = false;
-            mode_.smartTimer = 0.0f;
-            mode_.holdMode = true;
-
-            if (!InputGate::IsInputBlockedByMenus()) {
-                OnKeyPressed(player);
-            }
+        if (mode_.smartTimer < kSmartClickThreshold) {
+            return;
         }
+
+        mode_.smartPending = false;
+        mode_.smartTimer = 0.0f;
+        mode_.holdMode = true;
+        mode_.smartPromotedToHold = true;
+
+        if (InputGate::IsInputBlockedByMenus()) {
+            return;
+        }
+
+        OnKeyPressed(player);
     }
 
     bool BowModeController::UpdateExitPending(float dt) {
@@ -294,7 +316,11 @@ namespace BowInput {
         auto& st = BowState::Get();
         auto* equipMgr = RE::ActorEquipManager::GetSingleton();
 
+        BOW_DEBUG_LOG("[ModeController] OnWeaponSheathe: pendingRestore={} sheathReq={} isUsingBow={}", pendingRestore,
+                      sheathReq, st.isUsingBow);
+
         if (!equipMgr) {
+            BOW_DEBUG_LOG("[ModeController] OnWeaponSheathe: no equipMgr, clearing state");
             pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
             st.isUsingBow = false;
             BowState::ClearPrevWeapons();
@@ -305,6 +331,7 @@ namespace BowInput {
         }
 
         if (pendingRestore) {
+            BOW_DEBUG_LOG("[ModeController] OnWeaponSheathe: immediate restore via pendingRestoreAfterSheathe");
             pendingRestoreAfterSheathe.store(false, std::memory_order_relaxed);
             BowState::SetBowEquipped(false);
             BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st);
@@ -315,6 +342,10 @@ namespace BowInput {
 
         if (sheathReq && st.isUsingBow) {
             sheathRestoreAtMs = NowMs() + 2000;
+            BOW_DEBUG_LOG("[ModeController] OnWeaponSheathe: scheduling sheathRestoreAtMs={} now={}", sheathRestoreAtMs,
+                          NowMs());
+        } else {
+            BOW_DEBUG_LOG("[ModeController] OnWeaponSheathe: sheathReq path skipped isUsingBow={}", st.isUsingBow);
         }
     }
 
@@ -352,8 +383,7 @@ namespace BowInput {
         exit_.delayMs = 0;
 
         hotkeyDown = false;
-        mode_.smartPending = false;
-        mode_.smartTimer = 0.0f;
+        ResetSmartState();
     }
 
     void BowModeController::OnKeyPressed(RE::PlayerCharacter* player) {
@@ -492,13 +522,18 @@ namespace BowInput {
 
         ctrl.fakeEnableBumperAtMs = 0;
 
+        BOW_DEBUG_LOG("[ModeController] ExitBowMode: wasCombatPosed={} inCombat={} isUsingBow={}", st.wasCombatPosed,
+                      player->IsInCombat(), st.isUsingBow);
+
         if (!st.wasCombatPosed && !player->IsInCombat()) {
+            BOW_DEBUG_LOG("[ModeController] ExitBowMode: pendingRestoreAfterSheathe path");
             ctrl.pendingRestoreAfterSheathe.store(true, std::memory_order_relaxed);
             st.isUsingBow = false;
             SetWeaponDrawn(player, false);
             return;
         }
 
+        BOW_DEBUG_LOG("[ModeController] ExitBowMode: immediate restore path");
         BowState::RestorePrevWeaponsAndAmmo(player, equipMgr, st);
     }
 
@@ -552,8 +587,7 @@ namespace BowInput {
         exit_.delayTimer = 0.0f;
         exit_.delayMs = 0;
 
-        mode_.smartPending = false;
-        mode_.smartTimer = 0.0f;
+        ResetSmartState();
     }
 
     void BowModeController::StartAutoAttackDraw() {
@@ -581,7 +615,7 @@ namespace BowInput {
         ctrl.attackHold_.secs.store(0.0f, std::memory_order_relaxed);
     }
 
-    bool BowModeController::IsWeaponDrawn(RE::Actor* actor) {
+    bool BowModeController::IsWeaponDrawn(RE::Actor const* actor) {
         if (!actor) return false;
         return actor && actor->IsWeaponDrawn();
     }
@@ -620,9 +654,9 @@ namespace BowInput {
                 const auto now = NowMs();
                 const auto lastHotkey = lastHotkeyPressMs.load(std::memory_order_relaxed);
                 const bool nearHotkey = (lastHotkey != 0) && (now - lastHotkey) < 250;
-                const bool isKbOrGp = (dev == RE::INPUT_DEVICE::kKeyboard || dev == RE::INPUT_DEVICE::kGamepad);
 
-                if (isKbOrGp && bowSt.isUsingBow && !hotkeyDown && !nearHotkey && BowState::IsBowEquipped() &&
+                if (const bool isKbOrGp = (dev == RE::INPUT_DEVICE::kKeyboard || dev == RE::INPUT_DEVICE::kGamepad);
+                    isKbOrGp && bowSt.isUsingBow && !hotkeyDown && !nearHotkey && BowState::IsBowEquipped() &&
                     !bowSt.isEquipingBow) {
                     sheathRequestedByPlayer.store(true, std::memory_order_relaxed);
                 }
@@ -648,5 +682,12 @@ namespace BowInput {
                 }
             }
         }
+    }
+
+    void BowModeController::ResetSmartState() {
+        mode_.smartPending = false;
+        mode_.smartTimer = 0.0f;
+        mode_.smartImmediatePressStarted = false;
+        mode_.smartPromotedToHold = false;
     }
 }

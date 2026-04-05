@@ -16,6 +16,9 @@ namespace BowInput {
         bool smartMode = false;
         bool smartPending = false;
         float smartTimer = 0.0f;
+
+        bool smartImmediatePressStarted = false;
+        bool smartPromotedToHold = false;
     };
 
     struct ExitState {
@@ -51,7 +54,7 @@ namespace BowInput {
         bool hotkeyDown = false;
 
         std::uint64_t fakeEnableBumperAtMs = 0;
-        std::uint64_t sheathRestoreAtMs    = 0;
+        std::uint64_t sheathRestoreAtMs = 0;
 
         std::atomic_bool allowUnequip{true};
         std::atomic<std::uint64_t> allowUnequipReenableMs{0};
@@ -102,6 +105,8 @@ namespace BowInput {
         void OnKeyPressed(RE::PlayerCharacter* player);
         void OnKeyReleased();
 
+        void ResetSmartState();
+
         static void EnterBowMode(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
                                  BowState::IntegratedBowState& st);
         static void ExitBowMode(RE::PlayerCharacter* player, RE::ActorEquipManager* equipMgr,
@@ -112,7 +117,7 @@ namespace BowInput {
 
         void ResetExitState();
 
-        static bool IsWeaponDrawn(RE::Actor* actor);
+        static bool IsWeaponDrawn(RE::Actor const* actor);
         static void SetWeaponDrawn(RE::Actor* actor, bool drawn);
         static RE::ExtraDataList* GetPrimaryExtra(RE::InventoryEntryData const* entry);
 

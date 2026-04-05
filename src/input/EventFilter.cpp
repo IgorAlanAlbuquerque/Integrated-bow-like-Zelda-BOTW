@@ -37,27 +37,50 @@ namespace {
         const bool hotkeyDown = BowModeController::Get().hotkeyDown;
         const auto& inputs = Inputs();
 
-        if (!ComboContains(hk.bowCombo, unifiedCode)) return false;
+        const bool inCombo = ComboContains(hk.bowCombo, unifiedCode);
 
-        auto& rp = GetBowReplayState();
-        if (rp.armed && rp.rawIdCode == rawIdCode && rp.userEvent == userEvent && (value > 0.5f) == rp.valueAboveHalf) {
+        BOW_DEBUG_LOG(
+            "[EventFilter] ShouldFilterBow: unifiedCode={} rawIdCode={} userEvent={} value={} heldSecs={} inCombo={} "
+            "hotkeyDown={} suppressUntilReleased={} pendingSrc={}",
+            unifiedCode, rawIdCode, userEvent.c_str(), value, heldSecs, inCombo, hotkeyDown, rt.suppressUntilReleased,
+            static_cast<int>(rt.exclusivePendingSrc));
+
+        if (!inCombo) return false;
+
+        if (auto& rp = GetBowReplayState();
+            rp.armed && rp.rawIdCode == rawIdCode && rp.userEvent == userEvent && (value > 0.5f) == rp.valueAboveHalf) {
+            BOW_DEBUG_LOG("[EventFilter] ShouldFilterBow: replay passthrough rawIdCode={}", rawIdCode);
             rp.armed = false;
             return false;
         }
 
-        if (hotkeyDown) return true;
-        if (rt.suppressUntilReleased) return true;
+        if (hotkeyDown) {
+            BOW_DEBUG_LOG("[EventFilter] ShouldFilterBow: filtered because hotkeyDown=true");
+            return true;
+        }
+
+        if (rt.suppressUntilReleased) {
+            BOW_DEBUG_LOG("[EventFilter] ShouldFilterBow: filtered because suppressUntilReleased=true");
+            return true;
+        }
 
         if (ComboIsFullyDown(hk.bowCombo, inputs)) {
-            if (PendingActive(rt)) GetBowDeferredQueue().retained.push_back({rawIdCode, userEvent, value, heldSecs});
+            if (PendingActive(rt)) {
+                GetBowDeferredQueue().retained.emplace_back(rawIdCode, userEvent, value, heldSecs);
+                BOW_DEBUG_LOG("[EventFilter] ShouldFilterBow: combo fully down, retained deferred event");
+            } else {
+                BOW_DEBUG_LOG("[EventFilter] ShouldFilterBow: combo fully down, filtering event");
+            }
             return true;
         }
 
         if (PendingActive(rt)) {
-            GetBowDeferredQueue().retained.push_back({rawIdCode, userEvent, value, heldSecs});
+            GetBowDeferredQueue().retained.emplace_back(rawIdCode, userEvent, value, heldSecs);
+            BOW_DEBUG_LOG("[EventFilter] ShouldFilterBow: pending active, retained deferred event");
             return true;
         }
 
+        BOW_DEBUG_LOG("[EventFilter] ShouldFilterBow: event not filtered");
         return false;
     }
 }
@@ -90,14 +113,16 @@ void BowInput::FilterBowEvents(RE::InputEvent** a_evns) {
             if (dev == RE::INPUT_DEVICE::kGamepad) {
                 const int idx = InputUtil::GamepadIdToIndex(static_cast<int>(rawCode));
                 if (idx < 0) {
+                    BOW_DEBUG_LOG("[EventFilter] FilterBowEvents: ignored unknown gamepad rawCode={}", rawCode);
                     prev = cur;
                     cur = next;
                     continue;
                 }
                 unified = kGamepadOffset + idx;
             } else if (dev == RE::INPUT_DEVICE::kMouse) {
-                const int idx = static_cast<int>(rawCode);
+                const auto idx = static_cast<int>(rawCode);
                 if (idx < 0 || idx >= 10) {
+                    BOW_DEBUG_LOG("[EventFilter] FilterBowEvents: ignored invalid mouse rawCode={}", rawCode);
                     prev = cur;
                     cur = next;
                     continue;
@@ -105,8 +130,13 @@ void BowInput::FilterBowEvents(RE::InputEvent** a_evns) {
                 unified = kMouseOffset + idx;
             }
 
+            BOW_DEBUG_LOG("[EventFilter] FilterBowEvents: dev={} rawCode={} unified={} pressed={} value={} held={}",
+                          static_cast<int>(dev), rawCode, unified, btn->IsPressed(), btn->Value(), btn->HeldDuration());
+
             if (unified >= 0 && unified < kMaxCode)
                 remove = ShouldFilterBow(unified, rawCode, btn->QUserEvent(), btn->Value(), btn->HeldDuration());
+
+            BOW_DEBUG_LOG("[EventFilter] FilterBowEvents: decision remove={} unified={}", remove, unified);
         }
 
         if (remove) {

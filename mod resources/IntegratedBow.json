@@ -1,0 +1,22 @@
+{
+  "rules": [
+    {
+      "icon": {
+        "source": "IntegratedBow/integratedbow.swf",
+        "label": "int_bow"
+      },
+      "match": {
+        "integratedBowSelected": true
+      }
+    },
+    {
+      "icon": {
+        "source": "IntegratedBow/integratedbow.swf",
+        "label": "int_bow"
+      },
+      "match": {
+        "integratedArrowSelected": true
+      }
+    }
+  ]
+}

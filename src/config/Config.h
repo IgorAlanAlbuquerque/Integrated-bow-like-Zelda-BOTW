@@ -22,7 +22,6 @@ namespace IntegratedBow {
 
         std::atomic<bool> autoDrawEnabled{true};
         std::atomic<float> sheathedDelaySeconds{1.0f};
-        bool noLeftBlockPatch = false;
         bool hideEquippedFromJsonPatch = false;
         bool BlockUnequip = false;
         std::atomic_bool skipEquipBowAnimationPatch{false};

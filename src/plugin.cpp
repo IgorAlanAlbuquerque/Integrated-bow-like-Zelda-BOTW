@@ -7,13 +7,13 @@
 #include <mutex>
 
 #include "Config/Config.h"
+#include "DIII/SelectedArrowCondition.h"
 #include "DIII/SelectedBowCondition.h"
 #include "DIII_API.h"
 #include "Hooks.h"
 #include "Input/InputHandler.h"
 #include "PCH.h"
 #include "Patchs/HiddenItemsPatch.h"
-#include "Patchs/UnMapBlock.h"
 #include "Persistence/SaveBowDB.h"
 #include "UI/Strings.h"
 #include "UI/UI_IntegratedBow.h"
@@ -23,9 +23,10 @@
 #endif
 
 namespace {
-    static std::string g_pendingEssPath;  // NOSONAR
-    static std::string g_currentEssPath;  // NOSONAR
-    static std::once_flag g_dbOnce;       // NOSONAR
+    static std::string g_pendingEssPath;    // NOSONAR
+    static std::string g_currentEssPath;    // NOSONAR
+    static std::once_flag g_dbOnce;         // NOSONAR
+    static DIII::IAPI* g_diiiApi{nullptr};  // NOSONAR
 
     void EnsureSaveBowDBLoaded() {
         std::call_once(g_dbOnce, []() { IntegratedBow::SaveBowDB::Get().LoadFromDisk(); });
@@ -36,6 +37,15 @@ namespace {
         cfg.chosenBowFormID.store(p.bow, std::memory_order_relaxed);
         cfg.chosenBowUniqueID.store(p.bowUniqueID, std::memory_order_relaxed);
         cfg.preferredArrowFormID.store(p.arrow, std::memory_order_relaxed);
+    }
+
+    void RefreshDIIIIcons() {
+        if (!g_diiiApi) {
+            spdlog::warn("[DIII] API not available; skipping RefreshItemIconData");
+            return;
+        }
+
+        spdlog::info("[DIII] RefreshItemIconData called");
     }
 
     IntegratedBow::SaveBowPrefs ReadPrefsFromConfig() {
@@ -86,7 +96,7 @@ namespace {
         }
     }
 
-    void GlobalMessageHandler(SKSE::MessagingInterface::Message* message) {
+    void GlobalMessageHandler(SKSE::MessagingInterface::Message* message) {  // NOSONAR
         if (!message) {
             return;
         }
@@ -111,7 +121,6 @@ namespace {
                 ApplyPrefsToConfig(IntegratedBow::SaveBowPrefs{});
 
                 auto const& cfg = IntegratedBow::GetBowConfig();
-                UnMapBlock::SetNoLeftBlockPatch(cfg.noLeftBlockPatch);
                 HiddenItemsPatch::SetEnabled(cfg.hideEquippedFromJsonPatch);
                 break;
             }
@@ -119,7 +128,6 @@ namespace {
             case SKSE::MessagingInterface::kPostLoadGame: {
                 {
                     auto const& cfg = IntegratedBow::GetBowConfig();
-                    UnMapBlock::SetNoLeftBlockPatch(cfg.noLeftBlockPatch);
                     HiddenItemsPatch::SetEnabled(cfg.hideEquippedFromJsonPatch);
                 }
 
@@ -136,9 +144,34 @@ namespace {
                 if (IntegratedBow::SaveBowPrefs prefs{};
                     IntegratedBow::SaveBowDB::Get().TryGetNormalized(g_currentEssPath, prefs)) {
                     ApplyPrefsToConfig(prefs);
+
+                    if (prefs.bow != 0) {
+                        if (auto* bow = RE::TESForm::LookupByID<RE::TESObjectWEAP>(prefs.bow)) {
+                            BowState::LoadChosenBow(bow, prefs.bowUniqueID);
+                            BowState::EnsureChosenBowInInventory();
+                        } else {
+                            BowState::ClearChosenBow();
+                        }
+                    } else {
+                        BowState::ClearChosenBow();
+                    }
+
+                    if (prefs.arrow != 0) {
+                        if (auto* ammo = RE::TESForm::LookupByID<RE::TESAmmo>(prefs.arrow)) {
+                            BowState::SetPreferredArrow(ammo);
+                        } else {
+                            BowState::SetPreferredArrow(nullptr);
+                        }
+                    } else {
+                        BowState::SetPreferredArrow(nullptr);
+                    }
                 } else {
                     ApplyPrefsToConfig(IntegratedBow::SaveBowPrefs{});
+                    BowState::ClearChosenBow();
+                    BowState::SetPreferredArrow(nullptr);
                 }
+
+                RefreshDIIIIcons();
                 break;
             }
 
@@ -198,17 +231,23 @@ namespace {
         if (!api) {
             return;
         }
+        g_diiiApi = api;
 
-        const bool ok = api->RegisterCondition(
+        const bool bowOk = api->RegisterCondition(
             "integratedBowSelected", [](const Json::Value& value, RE::FormType) -> std::unique_ptr<DIII::ICondition> {
                 return std::make_unique<IntegratedBow::SelectedBowCondition>(value);
             });
 
-        spdlog::info("[DIII] RegisterCondition returned {}", ok);
+        const bool arrowOk = api->RegisterCondition(
+            "integratedArrowSelected", [](const Json::Value& value, RE::FormType) -> std::unique_ptr<DIII::ICondition> {
+                return std::make_unique<IntegratedBow::SelectedArrowCondition>(value);
+            });
+
+        spdlog::info("[DIII] RegisterCondition bow={} arrow={}", bowOk, arrowOk);
     }
 }
 
-extern "C" DLLEXPORT constinit auto SKSEPlugin_Version = []() {
+extern "C" DLLEXPORT constinit auto SKSEPlugin_Version = []() {  // NOSONAR
     SKSE::PluginVersionData v{};
     v.PluginVersion(REL::Version{1, 5, 0, 0});
     v.PluginName("INTEGRATEDBOW");

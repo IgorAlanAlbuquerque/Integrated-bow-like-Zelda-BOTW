@@ -3,7 +3,6 @@ set(headers
     src/PCH.h
     src/Patchs/HiddenItemsPatch.h
     src/Patchs/SkipEquipController.h
-    src/Patchs/UnMapBlock.h
     src/UI/Strings.h
     src/UI/UI_integratedBow.h
     src/Config/Config.h

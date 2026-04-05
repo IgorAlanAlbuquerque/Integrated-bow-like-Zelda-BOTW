@@ -127,10 +127,14 @@ namespace {
         }
 
         static void thunk(RE::BSTEventSource<RE::InputEvent*>* a_dispatcher, RE::InputEvent* const* a_events) {
-            if (!a_events) return;
+            const float dt = CalcDt();
+            if (!a_events) {
+                if (func != 0) reinterpret_cast<Fn*>(func)(a_dispatcher, a_events);
+                BowInput::ProcessBowLogic(dt);
+                return;
+            }
 
             auto* player = RE::PlayerCharacter::GetSingleton();
-            const float dt = CalcDt();
 
             static bool s_prevBlocked = false;
             RE::InputEvent* head = *a_events;

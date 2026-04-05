@@ -97,7 +97,6 @@ namespace IntegratedBow {
             sheathedDelaySeconds.store(delay, std::memory_order_relaxed);
         }
 
-        noLeftBlockPatch = _getBool(ini, "Patches", "NoLeftBlockPatch", false);
         hideEquippedFromJsonPatch = _getBool(ini, "Patches", "HideEquippedFromJsonPatch", false);
         BlockUnequip = _getBool(ini, "Patches", "BlockPatch", false);
         skipEquipBowAnimationPatch.store(_getBool(ini, "Patches", "SkipEquipBowAnimationPatch", false),
@@ -142,7 +141,6 @@ namespace IntegratedBow {
         ini.SetBoolValue("Input", "AutoDrawEnabled", autoDrawEnabled.load(std::memory_order_relaxed));
         ini.SetDoubleValue("Input", "SheathedDelaySeconds",
                            static_cast<double>(sheathedDelaySeconds.load(std::memory_order_relaxed)));
-        ini.SetBoolValue("Patches", "NoLeftBlockPatch", noLeftBlockPatch);
         ini.SetBoolValue("Patches", "HideEquippedFromJsonPatch", hideEquippedFromJsonPatch);
         ini.SetBoolValue("Patches", "BlockPatch", BlockUnequip);
         ini.SetBoolValue("Patches", "SkipEquipBowAnimationPatch",

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<movie width="512" height="512" framerate="24" version="8">
+  <library>
+    <clip id="int_bow" import="int_bow.png" export="int_bow"/>
+  </library>
+  <frame/>
+</movie>

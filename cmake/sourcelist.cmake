@@ -3,7 +3,6 @@ set(headers
     src/Hooks.cpp
     src/Patchs/HiddenItemsPatch.cpp
     src/Patchs/SkipEquipController.cpp
-    src/Patchs/UnMapBlock.cpp
     src/UI/Strings.cpp
     src/UI/UI_integratedBow.cpp
     src/Config/Config.cpp

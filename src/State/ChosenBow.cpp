@@ -10,13 +10,6 @@
 
 namespace BowState {
     namespace {
-
-#ifdef DEBUG
-    #define BOW_DEBUG_LOG(...) spdlog::info(__VA_ARGS__)
-#else
-    #define BOW_DEBUG_LOG(...) ((void)0)
-#endif
-
         constexpr std::array<std::string_view, 6> kQualityTags{"fine",     "superior", "exquisite",
                                                                "flawless", "epic",     "legendary"};
 

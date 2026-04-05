@@ -9,9 +9,7 @@
 namespace IntegratedBow {
     class SelectedBowCondition final : public DIII::ICondition {
     public:
-        explicit SelectedBowCondition(const Json::Value&) {
-            // por enquanto não precisa ler nada do JSON
-        }
+        explicit SelectedBowCondition(const Json::Value&) {}
 
         bool Match(RE::InventoryEntryData* entry) const override {
             auto& st = BowState::Get();

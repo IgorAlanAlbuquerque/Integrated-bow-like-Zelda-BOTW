@@ -11,8 +11,11 @@ namespace BowInput {
     void SetMode(int mode);
     void SetCombo(int k1, int k2, int k3);
 
-    void RequestGamepadCapture();
-    [[nodiscard]] int PollCapturedGamepadButton();
+    void RequestHotkeyCapture();
+    void CancelHotkeyCapture();
+    void SetCaptureModeActive(bool active);
+    [[nodiscard]] int PollCapturedHotkey();
+    [[nodiscard]] bool IsCaptureModeActive();
 
     [[nodiscard]] bool IsHotkeyDown();
     [[nodiscard]] bool IsUnequipAllowed() noexcept;
