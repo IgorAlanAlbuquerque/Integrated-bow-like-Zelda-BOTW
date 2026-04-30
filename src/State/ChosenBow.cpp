@@ -17,7 +17,9 @@ namespace BowState {
         constexpr std::size_t kTagLen = 9;
 
         void TrimTrailingSpaces(std::string& s) {
+#ifdef DEBUG
             const auto before = s.size();
+#endif
             while (!s.empty() && s.back() == ' ') {
                 s.pop_back();
             }

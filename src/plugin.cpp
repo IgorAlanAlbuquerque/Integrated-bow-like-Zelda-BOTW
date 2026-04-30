@@ -18,10 +18,6 @@
 #include "UI/Strings.h"
 #include "UI/UI_IntegratedBow.h"
 
-#ifndef DLLEXPORT
-    #define DLLEXPORT __declspec(dllexport)
-#endif
-
 namespace {
     static std::string g_pendingEssPath;    // NOSONAR
     static std::string g_currentEssPath;    // NOSONAR
@@ -246,19 +242,33 @@ namespace {
         spdlog::info("[DIII] RegisterCondition bow={} arrow={}", bowOk, arrowOk);
     }
 }
-
-extern "C" DLLEXPORT constinit auto SKSEPlugin_Version = []() {  // NOSONAR
+#ifdef SKYRIM_SUPPORT_AE
+SKSEPluginVersion = []() {
     SKSE::PluginVersionData v{};
     v.PluginVersion(REL::Version{1, 5, 0, 0});
     v.PluginName("INTEGRATEDBOW");
     v.AuthorName("LoliManiaco");
     v.UsesAddressLibrary();
     v.UsesNoStructs();
-    v.CompatibleVersions({SKSE::RUNTIME_SSE_1_6_1170});
+    v.CompatibleVersions({SKSE::RUNTIME_SSE_LATEST});
     return v;
 }();
+#else
+extern "C" __declspec(dllexport) bool SKSEPlugin_Query(const SKSE::QueryInterface* a_skse, SKSE::PluginInfo* a_info) {
+    a_info->infoVersion = SKSE::PluginInfo::kVersion;
+    a_info->name = "INTEGRATEDBOW";
+    a_info->version = 15;
 
-extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* skse) {
+    if (const auto ver = a_skse->RuntimeVersion(); ver != SKSE::RUNTIME_SSE_LATEST) {
+        SKSE::log::critical("Unsupported runtime version {}, this plugin is only compatible with version {}",
+                            ver.string(), SKSE::RUNTIME_SSE_LATEST.string());
+        return false;
+    }
+    return true;
+}
+#endif
+
+SKSEPluginLoad(const SKSE::LoadInterface* skse) {
     SKSE::Init(skse);
     InitializeLogger();
 

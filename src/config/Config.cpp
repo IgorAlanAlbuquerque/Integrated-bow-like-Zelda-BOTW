@@ -53,9 +53,9 @@ namespace IntegratedBow {
         }
         mode.store(newMode, std::memory_order_relaxed);
 
-        const int c1 = _getInt(ini, "Input", "KeyboardScanCode1", 0x2F);
-        const int c2 = _getInt(ini, "Input", "KeyboardScanCode2", -1);
-        const int c3 = _getInt(ini, "Input", "KeyboardScanCode3", -1);
+        const int c1 = _getInt(ini, "Input", "ScanCode1", 0x2F);
+        const int c2 = _getInt(ini, "Input", "ScanCode2", -1);
+        const int c3 = _getInt(ini, "Input", "ScanCode3", -1);
 
         ScanCode1.store(c1, std::memory_order_relaxed);
         ScanCode2.store(c2, std::memory_order_relaxed);
